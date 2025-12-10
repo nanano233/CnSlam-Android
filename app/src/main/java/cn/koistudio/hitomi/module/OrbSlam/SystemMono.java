@@ -37,7 +37,13 @@ public class SystemMono {
         muCamera = camera;
 //        mFileVoc = fileVoc;
 //        mFileCamParam = fileCamParam;
-        mpnSystem = nCreateSystemMono(fileCamParam,fileVoc);
+
+        // 这里设置 AdaptSLAM 的参数，后续可以改为从 UI 获取
+        String runType = "client";
+        String serverIp = "192.168.3.15"; // 请改为你的服务器实际IP
+        String serverPort = "10001";
+
+        mpnSystem = nCreateSystemMono(fileCamParam, fileVoc, runType, serverIp, serverPort);
 
     }
 
@@ -197,7 +203,8 @@ public class SystemMono {
     /**
      * 相当于 new ORBSLAM::SYSTEM 和 delete ORMSLAM::SYSTEM
      */
-    static native long nCreateSystemMono(String fileSetting,String fileOrbVoc);
+    // 修改 native 方法定义
+    static native long nCreateSystemMono(String fileSetting, String fileOrbVoc, String runType, String serverIp, String serverPort);
     static native void nDeleteSystemMono(long pSystem);
 
 

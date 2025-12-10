@@ -1,7 +1,7 @@
 /**
 * This file is part of ORB-SLAM3
 *
-* Copyright (C) 2017-2020 Carlos Campos, Richard Elvira, Juan J. Gómez Rodríguez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
+* Copyright (C) 2017-2021 Carlos Campos, Richard Elvira, Juan J. Gómez Rodríguez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
 * Copyright (C) 2014-2016 Raúl Mur-Artal, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
 *
 * ORB-SLAM3 is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
@@ -25,10 +25,17 @@
 #include "LoopClosing.h"
 #include "Tracking.h"
 #include "KeyFrameDatabase.h"
-#include "Initializer.h"
+#include "Settings.h"
 
 #include <mutex>
-
+////////////////////////////CommSLAM//////////////////////
+#include "TcpSocket.h"
+#include <thread>
+#include "concurrentqueue.h"
+#include "blockingconcurrentqueue.h"
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include "ORBVocabulary.h"
 
 namespace ORB_SLAM3
 {
@@ -37,12 +44,20 @@ class System;
 class Tracking;
 class LoopClosing;
 class Atlas;
+////////////////////CommSLAM//////////////////////////////////////
+class Uncertainty;
 
 class LocalMapping
 {
 public:
-    LocalMapping(System* pSys, Atlas* pAtlas, const float bMonocular, bool bInertial, const string &_strSeqName=std::string());
-
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+        ////////////////////CommSLAM//////////////////////////////////////
+    LocalMapping(System* pSys, Atlas* pAtlas, KeyFrameDatabase* pKFDB, ORBVocabulary* pVoc, Uncertainty* pUncertainty, const float bMonocular, bool bInertial, string RunType, const string &_strSeqName=std::string());
+    
+    // Edge-SLAM: TCP
+    void static tcp_receive(moodycamel::ConcurrentQueue<std::string>* messageQueue, TcpSocket* socketObject, unsigned int maxQueueSize, std::string name);
+    void static tcp_send(moodycamel::BlockingConcurrentQueue<std::string>* messageQueue, TcpSocket* socketObject, std::string name);
+    
     void SetLoopCloser(LoopClosing* pLoopCloser);
 
     void SetTracker(Tracking* pTracker);
@@ -78,7 +93,15 @@ public:
     bool IsInitializing();
     double GetCurrKFTime();
     KeyFrame* GetCurrKF();
-
+    
+    
+    ////////////////////////CommSLAM/////////////////////
+    void PostLoadKFandMP(KeyFrame* pKF);
+    void PreSaveKFandMP(KeyFrame* pKF);
+    void PostLoadKFandMPSet(map<long unsigned int, KeyFrame*> StoreKFid);
+    map<long unsigned int, MapPoint*> GetmpMPid();
+    map<long unsigned int, KeyFrame*> GetmpKFid();
+    
     std::mutex mMutexImuInit;
 
     Eigen::MatrixXd mcovInertial;
@@ -88,12 +111,17 @@ public:
     double mScale;
     double mInitTime;
     double mCostTime;
-    bool mbNewInit;
+
     unsigned int mInitSect;
     unsigned int mIdxInit;
     unsigned int mnKFs;
     double mFirstTs;
     int mnMatchesInliers;
+
+    // For debugging (erase in normal mode)
+    int mInitFr;
+    int mIdxIteration;
+    string strSequence;
 
     bool mbNotBA1;
     bool mbNotBA2;
@@ -105,6 +133,33 @@ public:
     bool mbFarPoints;
     float mThFarPoints;
 
+    //////////////CommSLAM///////////
+    ORBVocabulary* mpORBVocabulary;
+    KeyFrameDatabase* mpKeyFrameDB;
+    void AddKFSet(KeyFrame* kf);
+    void AddMPSet(MapPoint* mp);
+    void AddCameraSet(GeometricCamera* cam);
+    void AssignMap(KeyFrame* KF, int pMapId);
+    /////////////////////CommSLAM//////////////////////
+    moodycamel::BlockingConcurrentQueue<std::string> client_uplink_queue;
+    moodycamel::ConcurrentQueue<std::string> client_downlink_queue;
+    moodycamel::BlockingConcurrentQueue<std::string> server_downlink_queue;
+    moodycamel::ConcurrentQueue<std::string> server_uplink_queue;
+    map<long unsigned int, KeyFrame*> mpKFid;
+    map<long unsigned int, MapPoint*> mpMPid;
+    map<unsigned int, GeometricCamera*> mpCamId;
+    Atlas* mpAtlas;
+    int nflag;
+    KeyFrame *mpCurrentKeyFramePre;
+    
+    
+    
+    TcpSocket* uplink_socket;
+    TcpSocket* downlink_socket;
+    
+    std::thread* uplink_thread ;
+    std::thread* downlink_thread; 
+    
 #ifdef REGISTER_TIMES
     vector<double> vdKFInsert_ms;
     vector<double> vdMPCulling_ms;
@@ -133,12 +188,6 @@ protected:
     void SearchInNeighbors();
     void KeyFrameCulling();
 
-    cv::Mat ComputeF12(KeyFrame* &pKF1, KeyFrame* &pKF2);
-    cv::Matx33f ComputeF12_(KeyFrame* &pKF1, KeyFrame* &pKF2);
-
-    cv::Mat SkewSymmetricMatrix(const cv::Mat &v);
-    cv::Matx33f SkewSymmetricMatrix_(const cv::Matx31f &v);
-
     System *mpSystem;
 
     bool mbMonocular;
@@ -156,8 +205,14 @@ protected:
     bool mbFinished;
     std::mutex mMutexFinish;
 
-    Atlas* mpAtlas;
+///////////////////////CommSLAM//////////////////////////
+    Uncertainty* mpUncertainty;
+    
 
+    string mRunType;
+
+    
+    
     LoopClosing* mpLoopCloser;
     Tracking* mpTracker;
 
@@ -194,7 +249,8 @@ protected:
 
     //DEBUG
     ofstream f_lm;
-};
+
+    };
 
 } //namespace ORB_SLAM
 

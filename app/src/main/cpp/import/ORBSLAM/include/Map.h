@@ -1,7 +1,7 @@
 /**
 * This file is part of ORB-SLAM3
 *
-* Copyright (C) 2017-2020 Carlos Campos, Richard Elvira, Juan J. Gómez Rodríguez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
+* Copyright (C) 2017-2021 Carlos Campos, Richard Elvira, Juan J. Gómez Rodríguez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
 * Copyright (C) 2014-2016 Raúl Mur-Artal, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
 *
 * ORB-SLAM3 is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
@@ -24,6 +24,7 @@
 #include "KeyFrame.h"
 
 #include <set>
+#include <pangolin/pangolin.h>
 #include <mutex>
 
 #include <boost/serialization/base_object.hpp>
@@ -36,15 +37,46 @@ class MapPoint;
 class KeyFrame;
 class Atlas;
 class KeyFrameDatabase;
-class GeometricCamera;
 
 class Map
 {
+    friend class boost::serialization::access;
+
+    template<class Archive>
+    void serialize(Archive &ar, const unsigned int version)
+    {
+        ar & mnId;
+        ar & mnInitKFid;
+        ar & mnMaxKFid;
+        ar & mnBigChangeIdx;
+
+        // Save/load a set structure, the set structure is broken in libboost 1.58 for ubuntu 16.04, a vector is serializated
+        //ar & mspKeyFrames;
+        //ar & mspMapPoints;
+        ar & mvpBackupKeyFrames;
+        ar & mvpBackupMapPoints;
+
+        ar & mvBackupKeyFrameOriginsId;
+
+        ar & mnBackupKFinitialID;
+        ar & mnBackupKFlowerID;
+
+        ar & mbImuInitialized;
+        ar & mbIsInertial;
+        ar & mbIMU_BA1;
+        ar & mbIMU_BA2;
+    }
 
 public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     Map();
     Map(int initKFid);
     ~Map();
+    
+    // Edge-SLAM
+    KeyFrame* RetrieveKeyFrame(long int id);
+    MapPoint* RetrieveMapPoint(long int id);
+    
 
     void AddKeyFrame(KeyFrame* pKF);
     void AddMapPoint(MapPoint* pMP);
@@ -88,8 +120,7 @@ public:
     void SetImuInitialized();
     bool isImuInitialized();
 
-    void RotateMap(const cv::Mat &R);
-    void ApplyScaledRotation(const cv::Mat &R, const float s, const bool bScaledVel=false, const cv::Mat t=cv::Mat::zeros(cv::Size(1,3),CV_32F));
+    void ApplyScaledRotation(const Sophus::SE3f &T, const float s, const bool bScaledVel=false);
 
     void SetInertialSensor();
     bool IsInertial();
@@ -103,6 +134,11 @@ public:
     void ChangeId(long unsigned int nId);
 
     unsigned int GetLowerKFID();
+
+    void PreSave(std::set<GeometricCamera*> &spCams);
+    void PostLoad(KeyFrameDatabase* pKFDB, ORBVocabulary* pORBVoc/*, map<long unsigned int, KeyFrame*>& mpKeyFrameId*/, map<unsigned int, GeometricCamera*> &mpCams);
+
+    void printReprojectionError(list<KeyFrame*> &lpLocalWindowKFs, KeyFrame* mpCurrentKF, string &name, string &name_folder);
 
     vector<KeyFrame*> mvpKeyFrameOrigins;
     vector<unsigned long int> mvBackupKeyFrameOriginsId;
@@ -120,15 +156,29 @@ public:
 
     static long unsigned int nNextId;
 
+    // DEBUG: show KFs which are used in LBA
+    std::set<long unsigned int> msOptKFs;
+    std::set<long unsigned int> msFixedKFs;
+    
+    /////////////////CommSLAM///////////////////
+    std::set<MapPoint*> mspMapPoints;
+    std::set<KeyFrame*> mspKeyFrames;
+
 protected:
 
     long unsigned int mnId;
 
-    std::set<MapPoint*> mspMapPoints;
-    std::set<KeyFrame*> mspKeyFrames;
+
+
+    // Save/load, the set structure is broken in libboost 1.58 for ubuntu 16.04, a vector is serializated
+    std::vector<MapPoint*> mvpBackupMapPoints;
+    std::vector<KeyFrame*> mvpBackupKeyFrames;
 
     KeyFrame* mpKFinitial;
     KeyFrame* mpKFlowerID;
+
+    unsigned long int mnBackupKFinitialID;
+    unsigned long int mnBackupKFlowerID;
 
     std::vector<MapPoint*> mvpReferenceMapPoints;
 
@@ -139,14 +189,14 @@ protected:
 
     long unsigned int mnInitKFid;
     long unsigned int mnMaxKFid;
-    long unsigned int mnLastLoopKFid;
+    //long unsigned int mnLastLoopKFid;
 
     // Index related to a big change in the map (loop closure, global BA)
     int mnBigChangeIdx;
 
 
     // View of the map in aerial sight (for the AtlasViewer)
-    unsigned char* mThumbnail;
+    GLubyte* mThumbnail;
 
     bool mIsInUse;
     bool mHasTumbnail;
@@ -156,7 +206,9 @@ protected:
     bool mbIMU_BA1;
     bool mbIMU_BA2;
 
+    // Mutex
     std::mutex mMutexMap;
+
 };
 
 } //namespace ORB_SLAM3

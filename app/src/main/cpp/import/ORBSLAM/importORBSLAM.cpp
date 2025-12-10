@@ -63,7 +63,11 @@ extern "C"
 JNIEXPORT jlong JNICALL
 Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateSystemMono(JNIEnv *env, jclass clazz,
                                                                      jstring file_setting,
-                                                                     jstring file_orb_voc) {
+                                                                     jstring file_orb_voc,
+                                                                     // 新增 JNI 参数
+                                                                     jstring run_type,
+                                                                     jstring server_ip,
+                                                                     jstring server_port) {
     // TODO: implement nCreateSystemMono()
     __android_log_print(ANDROID_LOG_INFO, TAG, "Starting Good Luck!");
 
@@ -86,11 +90,18 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateSystemMono(JNIEnv *env
     __android_log_print(ANDROID_LOG_INFO, TAG, "Camera %s",filename_setting_str);
     __android_log_print(ANDROID_LOG_INFO, TAG, "Voc %s",filename_voctxt_str);
 
+    // 字符串转换代码
+    const char* run_type_str = env->GetStringUTFChars(run_type, 0);
+    const char* server_ip_str = env->GetStringUTFChars(server_ip, 0);
+    const char* server_port_str = env->GetStringUTFChars(server_port, 0);
+
     ORB_SLAM3::System* system = 0;
     try
     {
+        // 调用修改后的 System 构造函数
         system = new ORB_SLAM3::System(filename_voctxt_str, filename_setting_str,
-                                       ORB_SLAM3::System::MONOCULAR, false);
+                                       ORB_SLAM3::System::MONOCULAR, false, 0, "Android",
+                                       string(run_type_str), string(server_ip_str), string(server_port_str));
     }
     catch(int err)
     {
@@ -102,6 +113,11 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateSystemMono(JNIEnv *env
     env->ReleaseStringUTFChars(file_setting, filename_setting_str);
 
     __android_log_print(ANDROID_LOG_INFO, TAG, "Start Success! %X",system);
+
+    // ReleaseStringUTFChars
+    env->ReleaseStringUTFChars(run_type, run_type_str);
+    env->ReleaseStringUTFChars(server_ip, server_ip_str);
+    env->ReleaseStringUTFChars(server_port, server_port_str);
 
     return (long)system;
 

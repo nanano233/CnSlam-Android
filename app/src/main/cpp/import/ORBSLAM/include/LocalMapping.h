@@ -52,7 +52,7 @@ class LocalMapping
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
         ////////////////////CommSLAM//////////////////////////////////////
-    LocalMapping(System* pSys, Atlas* pAtlas, KeyFrameDatabase* pKFDB, ORBVocabulary* pVoc, Uncertainty* pUncertainty, const float bMonocular, bool bInertial, string RunType, const string &_strSeqName=std::string());
+        LocalMapping(System* pSys, Atlas* pAtlas, KeyFrameDatabase* pKFDB, ORBVocabulary* pVoc, Uncertainty* pUncertainty, const float bMonocular, bool bInertial, string RunType, const string &_strSeqName=std::string(), string serverIp="192.168.1.100", string serverPort="10001");
     
     // Edge-SLAM: TCP
     void static tcp_receive(moodycamel::ConcurrentQueue<std::string>* messageQueue, TcpSocket* socketObject, unsigned int maxQueueSize, std::string name);

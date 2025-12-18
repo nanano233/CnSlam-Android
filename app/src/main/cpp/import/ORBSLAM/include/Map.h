@@ -16,6 +16,11 @@
 * If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifdef ANDROID
+#include <GLES2/gl2.h>
+// 或者如果不想包含 GLES 头文件，直接定义类型：
+// typedef unsigned char GLubyte;
+#endif
 
 #ifndef MAP_H
 #define MAP_H
@@ -24,7 +29,7 @@
 #include "KeyFrame.h"
 
 #include <set>
-#include <pangolin/pangolin.h>
+//#include <pangolin/pangolin.h>
 #include <mutex>
 
 #include <boost/serialization/base_object.hpp>
@@ -196,7 +201,7 @@ protected:
 
 
     // View of the map in aerial sight (for the AtlasViewer)
-    GLubyte* mThumbnail;
+//    GLubyte* mThumbnail;
 
     bool mIsInUse;
     bool mHasTumbnail;

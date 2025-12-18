@@ -40,7 +40,7 @@ public class SystemMono {
 
         // 这里设置 AdaptSLAM 的参数，后续可以改为从 UI 获取
         String runType = "client";
-        String serverIp = "192.168.3.15"; // 请改为你的服务器实际IP
+        String serverIp = "192.168.1.152"; // 请改为你的服务器实际IP
         String serverPort = "10001";
 
         mpnSystem = nCreateSystemMono(fileCamParam, fileVoc, runType, serverIp, serverPort);

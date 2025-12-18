@@ -67,10 +67,17 @@ public class MonoActivity extends AppCompatActivity {
     @Override
     protected void onStop() {
         super.onStop();
-        mCamera.close();
-        mCamera = null;
-        muIMU.close();
-        muIMU = null ;
+        // 停止 Handler 的循环调用，防止它在对象销毁后继续执行
+        mHandler.removeCallbacks(mRunTrack);
+
+        if (mCamera != null) {
+            mCamera.close();
+            mCamera = null;
+        }
+        if (muIMU != null) {
+            muIMU.close();
+            muIMU = null;
+        }
     }
 
     @Override

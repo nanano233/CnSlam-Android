@@ -16,6 +16,8 @@
 
 #include "nViewer.hpp"
 
+#include "Converter.h"
+
 
 static const char* TAG = "ORBSLAM";
 
@@ -168,7 +170,8 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
     cv::Mat input = cv::bitmap2Mat(env, bitmap);
 
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
-    cv::Mat pose = system->TrackMonocular(input,second);
+    Sophus::SE3f Tcw = system->TrackMonocular(input, second);
+    cv::Mat pose = ORB_SLAM3::Converter::toCvMat(Tcw.matrix());
 
     // TODO: Fast Draw
     input = frame_draw_fast(&input,system->GetTrackedKeyPointsUn(),cv::Scalar(0,255,0),2.0f);
@@ -213,10 +216,10 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetCurrentMapPoints(JN
     {
         if(vpMPs[i]->isBad())
             continue;
-        cv::Mat pos = vpMPs[i]->GetWorldPos();
-        vPoints.push_back(pos.at<float>(0));
-        vPoints.push_back(-pos.at<float>(1));
-        vPoints.push_back(pos.at<float>(2));
+        Eigen::Vector3f pos = vpMPs[i]->GetWorldPos();
+        vPoints.push_back(pos(0));
+        vPoints.push_back(-pos(1));
+        vPoints.push_back(pos(2));
     }
 
 
@@ -239,7 +242,8 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetCurrentCamPose(JNIE
     // TODO: implement nSystemGetCurrentCamPose()
     // Debug
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
-    cv::Mat pose = system->mpTracker->mCurrentFrame.mTcw ;
+    Sophus::SE3f Tcw = system->mpTracker->mCurrentFrame.GetPose();
+    cv::Mat pose = ORB_SLAM3::Converter::toCvMat(Tcw.matrix());
 
     if(pose.rows==4&&pose.cols==4)
     {
@@ -255,31 +259,16 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetCurrentCamPose(JNIE
 //            }
 //        }
 
-        cv::Mat Rwc(3,3,CV_32F);
-        cv::Mat twc(3,1,CV_32F);
+//        cv::Mat Rwc(3,3,CV_32F);
+//        cv::Mat twc(3,1,CV_32F);
+//
+//        Rwc = pose.rowRange(0,3).colRange(0,3).t();
+//        twc = -Rwc*pose.rowRange(0,3).col(3);
+        Sophus::SE3f Twc = Tcw.inverse();
+        cv::Mat poseInv = ORB_SLAM3::Converter::toCvMat(Twc.matrix());
 
-        Rwc = pose.rowRange(0,3).colRange(0,3).t();
-        twc = -Rwc*pose.rowRange(0,3).col(3);
-
-        _data[0] = Rwc.at<float>(0,0);
-        _data[1] = Rwc.at<float>(1,0);
-        _data[2] = Rwc.at<float>(2,0);
-        _data[3]  = 0.0;
-
-        _data[4] = Rwc.at<float>(0,1);
-        _data[5] = Rwc.at<float>(1,1);
-        _data[6] = Rwc.at<float>(2,1);
-        _data[7]  = 0.0;
-
-        _data[8] = Rwc.at<float>(0,2);
-        _data[9] = Rwc.at<float>(1,2);
-        _data[10] = -Rwc.at<float>(2,2);
-        _data[11]  = 0.0;
-
-        _data[12] = twc.at<float>(0);
-        _data[13] = twc.at<float>(1);
-        _data[14] = twc.at<float>(2);
-        _data[15]  = 1.0;
+        for(int i=0; i<16; i++)
+            _data[i] = poseInv.at<float>(i/4, i%4);
 
 
         env->SetFloatArrayRegion(resArr,0,16,_data);
@@ -334,7 +323,8 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMonoIMU(JNIEnv
 
     try
     {
-        cv::Mat pose = system->TrackMonocular(inputSmall,second,imupoints);
+        Sophus::SE3f Tcw = system->TrackMonocular(inputSmall, second, -1, imupoints);
+        cv::Mat pose = ORB_SLAM3::Converter::toCvMat(Tcw.matrix());
         // cv::Mat pose = system->TrackMonocular(input,second);
 
         // __android_log_print(ANDROID_LOG_INFO, TAG, ">>>>>>>> 3");

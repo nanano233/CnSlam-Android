@@ -38,18 +38,17 @@ add_library(lib_adaptslam SHARED
         src/LoopClosing.cc
         src/ORBextractor.cc
         src/ORBmatcher.cc
-        src/FrameDrawer.cc
         src/Converter.cc
         src/MapPoint.cc
         src/KeyFrame.cc
         src/Atlas.cc
         src/Map.cc
-        src/MapDrawer.cc
+#        src/MapDrawer.cc
         src/Optimizer.cc
         src/Frame.cc
         src/KeyFrameDatabase.cc
         src/Sim3Solver.cc
-        src/Viewer.cc
+#        src/Viewer.cc
         src/ImuTypes.cc
         src/G2oTypes.cc
         src/CameraModels/Pinhole.cpp
@@ -69,7 +68,8 @@ target_link_libraries(lib_adaptslam
         lib_g2o
         lib_boost_serialization
         lib_crypto
-        OpenCV # Android 项目中通常在顶层 CMake 或此时已引入 OpenCV
+        OpenCV
+        atomic
         android
         log)
 

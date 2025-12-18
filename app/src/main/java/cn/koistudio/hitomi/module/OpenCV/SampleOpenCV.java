@@ -9,7 +9,7 @@ public class SampleOpenCV {
 
     // 对上Cmake输出的命名
     static{
-        System.loadLibrary("opencv");
+        System.loadLibrary("OpenCV");
     }
 
     public void invoke_selfTest()

@@ -263,7 +263,7 @@ public class MapRender implements GLSurfaceView.Renderer{
 
 
         // Debug Var Start
-
+/*
         float vColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
 
         // TODO: 处理缩放
@@ -280,9 +280,10 @@ public class MapRender implements GLSurfaceView.Renderer{
                     mCoords[j] = -mCoords[j];
             }
         }
+*/
 
 
-
+        float vColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
 
         if (mCoords.length < 3 * 3) {
             mCoords = new float[]{

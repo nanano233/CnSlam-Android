@@ -17,7 +17,10 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
-                cppFlags ''
+                arguments "-DANDROID_STL=c++_shared"
+
+                cppFlags "-std=c++14 -frtti -fexceptions -DEIGEN_DONT_ALIGN_STATICALLY -DEIGEN_DONT_VECTORIZE -DDISABLE_SMI"
+                cFlags "-DEIGEN_DONT_ALIGN_STATICALLY -DEIGEN_DONT_VECTORIZE -DDISABLE_SMI"
             }
         }
         ndk{

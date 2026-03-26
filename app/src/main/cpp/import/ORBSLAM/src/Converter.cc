@@ -17,6 +17,8 @@
 */
 
 #include "Converter.h"
+#include "Converter.h"
+#include <cmath>
 
 namespace ORB_SLAM3
 {
@@ -301,14 +303,47 @@ Sophus::SE3<float> Converter::toSophus(const cv::Mat &T) {
     Eigen::Matrix<double,3,3> eigMat = toMatrix3d(T.rowRange(0,3).colRange(0,3));
     Eigen::Quaternionf q(eigMat.cast<float>());
 
+    // 检查并归一化四元数
+    if (std::isnan(q.w()) || std::isnan(q.x()) || std::isnan(q.y()) || std::isnan(q.z()) || q.squaredNorm() < 1e-6f) {
+        q = Eigen::Quaternionf(1, 0, 0, 0); // 降级为安全的单位四元数
+    } else {
+        q.normalize(); // 强制归一化，防止由于浮点漂移导致 Sophus 崩溃
+    }
+
     Eigen::Matrix<float,3,1> t = toVector3d(T.rowRange(0,3).col(3)).cast<float>();
+
+    // 检查平移向量
+    if (std::isnan(t(0)) || std::isnan(t(1)) || std::isnan(t(2))) {
+        t = Eigen::Vector3f(0, 0, 0);
+    }
 
     return Sophus::SE3<float>(q,t);
 }
 
 Sophus::Sim3f Converter::toSophus(const g2o::Sim3& S) {
-    return Sophus::Sim3f(Sophus::RxSO3d((float)S.scale(), S.rotation().matrix()).cast<float>() ,
-                         S.translation().cast<float>());
+    // 防崩溃提取并清理旋转四元数
+    Eigen::Quaterniond q = S.rotation();
+    if (std::isnan(q.w()) || std::isnan(q.x()) || std::isnan(q.y()) || std::isnan(q.z()) || q.squaredNorm() < 1e-6) {
+        q = Eigen::Quaterniond(1, 0, 0, 0);
+    } else {
+        q.normalize();
+    }
+
+    // 防崩溃清理尺度 Scale (尺度不能为负数、0 或 NaN)
+    float scale = (float)S.scale();
+    if (std::isnan(scale) || std::isinf(scale) || scale <= 1e-5f) {
+        scale = 1.0f; // 恢复默认尺度 1.0
+    }
+
+    // 防崩溃清理平移向量
+    Eigen::Vector3f t = S.translation().cast<float>();
+    if (std::isnan(t(0)) || std::isnan(t(1)) || std::isnan(t(2))) {
+        t = Eigen::Vector3f(0, 0, 0);
+    }
+
+    // 使用安全洗皮后的数据重新构造 Sophus::Sim3f
+    Sophus::RxSO3d safe_rxso3((double)scale, q.toRotationMatrix());
+    return Sophus::Sim3f(safe_rxso3.cast<float>(), t);
 }
 
 } //namespace ORB_SLAM

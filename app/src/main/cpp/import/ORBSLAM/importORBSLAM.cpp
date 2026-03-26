@@ -18,6 +18,7 @@
 
 #include "Converter.h"
 
+#include <opencv2/core.hpp>
 
 static const char* TAG = "ORBSLAM";
 
@@ -70,6 +71,8 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateSystemMono(JNIEnv *env
                                                                      jstring run_type,
                                                                      jstring server_ip,
                                                                      jstring server_port) {
+    // 强行关闭 OpenCV 的 SIMD/NEON 优化
+    cv::setUseOptimized(false);
     // TODO: implement nCreateSystemMono()
     __android_log_print(ANDROID_LOG_INFO, TAG, "Starting Good Luck!");
 
@@ -165,24 +168,35 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
                                                                        jlong p_system,
                                                                        jobject bitmap,
                                                                        jdouble second) {
-    // TODO: implement nSystemTrackingMono()
-
+    // 1. 获取 Bitmap
     cv::Mat input = cv::bitmap2Mat(env, bitmap);
 
+    // 2. 转灰度图
+    cv::Mat inputGray;
+    if (input.channels() == 4) {
+        cv::cvtColor(input, inputGray, cv::COLOR_RGBA2GRAY);
+    } else if (input.channels() == 3) {
+        cv::cvtColor(input, inputGray, cv::COLOR_RGB2GRAY);
+    } else {
+        inputGray = input.clone();
+    }
+
+    // 3. 内存隔离护盾
+    cv::Mat safeInputGray(inputGray.rows, inputGray.cols, inputGray.type());
+    inputGray.copyTo(safeInputGray);
+
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
-    Sophus::SE3f Tcw = system->TrackMonocular(input, second);
-    cv::Mat pose = ORB_SLAM3::Converter::toCvMat(Tcw.matrix());
 
-    // TODO: Fast Draw
-    input = frame_draw_fast(&input,system->GetTrackedKeyPointsUn(),cv::Scalar(0,255,0),2.0f);
+    // 4. 传入 safeInputGray
+    Sophus::SE3f Tcw = system->TrackMonocular(safeInputGray, second);
 
-
-
-    cv::mat2Bitmap(env,bitmap,input);
+    // 5. 直接在原图绘制特征点
+    input = frame_draw_fast(&input, system->GetTrackedKeyPointsUn(), cv::Scalar(0, 255, 0), 2.0f);
+    cv::mat2Bitmap(env, bitmap, input);
 
     return 0;
-
 }
+
 extern "C"
 JNIEXPORT jfloatArray JNICALL
 Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetCurrentMapPoints(JNIEnv *env,
@@ -285,26 +299,27 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMonoIMU(JNIEnv
                                                                           jobject bitmap,
                                                                           jdouble second,
                                                                           jdoubleArray point_data) {
-
-    // __android_log_print(ANDROID_LOG_INFO, TAG, ">>>>>>>> 1");
-
-    // TODO: implement nSystemTrackingMonoIMU()
-
-    // 测试减少一半
+    // 1. 获取 Bitmap
     cv::Mat input = cv::bitmap2Mat(env, bitmap);
-    cv::Mat inputSmall ;
-    cv::resize(input,inputSmall,cv::Size(input.cols/2,input.rows/2));
 
+    // 2. 灰度转换和内存隔离
+    cv::Mat inputGray;
+    if (input.channels() == 4) {
+        cv::cvtColor(input, inputGray, cv::COLOR_RGBA2GRAY);
+    } else if (input.channels() == 3) {
+        cv::cvtColor(input, inputGray, cv::COLOR_RGB2GRAY);
+    } else {
+        inputGray = input.clone();
+    }
+    cv::Mat safeInputGray(inputGray.rows, inputGray.cols, inputGray.type());
+    inputGray.copyTo(safeInputGray);
 
-    // TODO: Align data
+    // 3. 获取 IMU 数据
     int IMUDataLen = env->GetArrayLength(point_data);
     jdouble *pIMUData = env->GetDoubleArrayElements(point_data, NULL);
-    __android_log_print(ANDROID_LOG_INFO, TAG, "IMUDataLen=%d", IMUDataLen);
     vector<ORB_SLAM3::IMU::Point> imupoints;
 
-
-    for(int i=0;i<IMUDataLen/7;i++)
-    {
+    for(int i=0; i<IMUDataLen/7; i++) {
         double ax = pIMUData[i*7+0];
         double ay = pIMUData[i*7+1];
         double az = pIMUData[i*7+2];
@@ -313,37 +328,27 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMonoIMU(JNIEnv
         double gz = pIMUData[i*7+5];
         double timestamp = pIMUData[i*7+6];
         ORB_SLAM3::IMU::Point _point(ax,ay,az,gx,gy,gz,timestamp);
-        // __android_log_print(ANDROID_LOG_INFO, TAG, ">>>>>>>> 1.5 %lf ",timestamp);
         imupoints.push_back(_point);
     }
 
-    // __android_log_print(ANDROID_LOG_INFO, TAG, ">>>>>>>> 2 %X ",p_system);
+    // 用完 JNI 数组释放
+    env->ReleaseDoubleArrayElements(point_data, pIMUData, JNI_ABORT);
 
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
 
-    try
-    {
-        Sophus::SE3f Tcw = system->TrackMonocular(inputSmall, second, -1, imupoints);
-        cv::Mat pose = ORB_SLAM3::Converter::toCvMat(Tcw.matrix());
-        // cv::Mat pose = system->TrackMonocular(input,second);
+    try {
+        // 4. 传入安全的原分辨率灰度图
+        Sophus::SE3f Tcw = system->TrackMonocular(safeInputGray, second, -1, imupoints);
 
-        // __android_log_print(ANDROID_LOG_INFO, TAG, ">>>>>>>> 3");
-
-        // TODO: Fast Draw
-        input = frame_draw_fast(&input,system->GetTrackedKeyPointsUn(),cv::Scalar(0,255,0),2.0f);
+        // 5.画特征点
+        input = frame_draw_fast(&input, system->GetTrackedKeyPointsUn(), cv::Scalar(0,255,0), 2.0f);
     }
-    catch(int err)
-    {
+    catch(int err) {
         __android_log_print(ANDROID_LOG_ERROR, TAG, "Track Error %X",err);
     }
 
-
-
-
     cv::mat2Bitmap(env,bitmap,input);
-
     return 0;
-
 }
 
 extern "C"

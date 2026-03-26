@@ -27,6 +27,11 @@
 #include<mutex>
 #include<chrono>
 #include<ctime>
+
+#include <android/log.h>
+#define LOG_TAG "ORBSLAM_DEBUG"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
 namespace ORB_SLAM3
 {
 //////////////CommSLAM////////////////////////////
@@ -34,6 +39,9 @@ LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, KeyFrameDatabase* pKFDB,
     mpSystem(pSys), mbMonocular(bMonocular), mbInertial(bInertial), mRunType(RunType), mbResetRequested(false), mbResetRequestedActiveMap(false), mbFinishRequested(false), mbFinished(true), mpAtlas(pAtlas), mpORBVocabulary(pVoc), mpKeyFrameDB(pKFDB),mpUncertainty(pUncertainty), bInitializing(false), mbAbortBA(false), mbStopped(false), mbStopRequested(false), mbNotStop(false), mbAcceptKeyFrames(true),
     mIdxInit(0), mScale(1.0), mInitSect(0), mbNotBA1(true), mbNotBA2(true), mIdxIteration(0), infoInertial(Eigen::MatrixXd::Zero(9,9))
 {
+    // [新增日志 1]
+    LOGI("LocalMapping: Constructor started. RunType = %s", mRunType.c_str());
+
     mnMatchesInliers = 0;
 
     mbBadImu = false;
@@ -51,6 +59,10 @@ LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, KeyFrameDatabase* pKFDB,
 //        cout << "Enter the client IP address: ";
         //getline(cin, client_ip);
         //#Input your IP address#
+
+        // [新增日志 2]
+        LOGI("LocalMapping: Preparing client socket config. ServerIP=%s, Port=%s", serverIp.c_str(), serverPort.c_str());
+
         client_ip="0.0.0.0";
         cout << "Enter the server IP address: ";
         //getline(cin, server_ip);
@@ -65,9 +77,14 @@ LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, KeyFrameDatabase* pKFDB,
         //getline(cin, server_port);
          //#Input your port number#
         server_port="10001";
+        // [新增日志 3]
+        LOGI("LocalMapping: Creating Uplink Socket...");
         uplink_socket = new TcpSocket(client_ip, 10000, serverIp, std::stoi(serverPort));
-    
+        // [新增日志 4] - 关键点！
+        LOGI("LocalMapping: calling sendConnectionRequest() - WAITING...");
         uplink_socket->sendConnectionRequest();
+        // [新增日志 5] - 如果能看到这条，说明连接成功，没卡住
+        LOGI("LocalMapping: sendConnectionRequest() FINISHED.");
     
         uplink_thread = new thread(&ORB_SLAM3::LocalMapping::tcp_send, &client_uplink_queue, uplink_socket, "uplink");
 
@@ -79,9 +96,14 @@ LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, KeyFrameDatabase* pKFDB,
         //#Input your port number#
         server_port="10003";
         //getline(cin, server_port);
-
+        // 下行链路连接
+        // [新增日志 6]
+        LOGI("LocalMapping: Creating Downlink Socket...");
         downlink_socket = new TcpSocket(client_ip, 10002, serverIp, std::stoi(serverPort) + 2);
+        // [新增日志 7]
+        LOGI("LocalMapping: calling downlink sendConnectionRequest() - WAITING...");
         downlink_socket->sendConnectionRequest();
+        LOGI("LocalMapping: downlink connected.");
         downlink_thread = new thread(&ORB_SLAM3::LocalMapping::tcp_receive, &client_downlink_queue, downlink_socket, 10, "downlink");
     }
     else
@@ -109,7 +131,7 @@ LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, KeyFrameDatabase* pKFDB,
         downlink_socket->waitForConnection();
         downlink_thread = new thread(&ORB_SLAM3::LocalMapping::tcp_send, &server_downlink_queue, downlink_socket, "downlink");
     }
-    
+    LOGI("LocalMapping: Constructor Finished.");
     
 #ifdef REGISTER_TIMES
     nLBA_exec = 0;

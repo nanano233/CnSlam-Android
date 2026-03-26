@@ -12,13 +12,16 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/Thirdparty/boost)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/Thirdparty/openssl/include)
 
 # 2. 导入预编译库 (DBoW2 和 g2o)
-add_library(lib_dbow2 SHARED IMPORTED)
+#[[add_library(lib_dbow2 SHARED IMPORTED)
 set_target_properties(lib_dbow2 PROPERTIES IMPORTED_LOCATION
         ${CMAKE_CURRENT_SOURCE_DIR}/libs/${ANDROID_ABI}/libDBoW2.so)
 
 add_library(lib_g2o SHARED IMPORTED)
 set_target_properties(lib_g2o PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_CURRENT_SOURCE_DIR}/libs/${ANDROID_ABI}/libg2o.so)
+        ${CMAKE_CURRENT_SOURCE_DIR}/libs/${ANDROID_ABI}/libg2o.so)]]
+
+add_subdirectory(Thirdparty/DBoW2)
+add_subdirectory(Thirdparty/g2o)
 
 # 3. 导入 Boost 和 OpenSSL
 add_library(lib_boost_serialization STATIC IMPORTED)
@@ -64,8 +67,8 @@ add_library(lib_adaptslam SHARED
 
 # 5. 链接 AdaptSLAM 的依赖
 target_link_libraries(lib_adaptslam
-        lib_dbow2
-        lib_g2o
+        DBoW2
+        g2o
         lib_boost_serialization
         lib_crypto
         OpenCV
@@ -85,3 +88,6 @@ target_link_libraries(ORBSLAM
         lib_adaptslam
         android
         log)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -O3")
+add_definitions(-DEIGEN_DONT_ALIGN_STATICALLY)

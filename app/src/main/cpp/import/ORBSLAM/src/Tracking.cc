@@ -2147,7 +2147,8 @@ void Tracking::Track()
 
         if(mState!=OK) // If rightly initialized, mState=OK
         {
-            mLastFrame = Frame(mCurrentFrame);
+            mLastFrame.~Frame();
+            new (&mLastFrame) Frame(mCurrentFrame);
             return;
         }
 
@@ -2536,7 +2537,8 @@ void Tracking::Track()
         if(!mCurrentFrame.mpReferenceKF)
             mCurrentFrame.mpReferenceKF = mpReferenceKF;
 
-        mLastFrame = Frame(mCurrentFrame);
+        mLastFrame.~Frame();
+        new (&mLastFrame) Frame(mCurrentFrame);
     }
 
 
@@ -2678,7 +2680,8 @@ void Tracking::StereoInitialization()
 
         mpLocalMapper->InsertKeyFrame(pKFini);
 
-        mLastFrame = Frame(mCurrentFrame);
+        mLastFrame.~Frame();
+        new (&mLastFrame) Frame(mCurrentFrame);
         mnLastKeyFrameId = mCurrentFrame.mnId;
         mpLastKeyFrame = pKFini;
         //mnLastRelocFrameId = mCurrentFrame.mnId;
@@ -2708,8 +2711,13 @@ void Tracking::MonocularInitialization()
         if(mCurrentFrame.mvKeys.size()>100)
         {
 
-            mInitialFrame = Frame(mCurrentFrame);
-            mLastFrame = Frame(mCurrentFrame);
+            // 销毁旧对象，并在原内存地址强行调用官方拷贝构造函数
+            mInitialFrame.~Frame();
+            new (&mInitialFrame) Frame(mCurrentFrame);
+
+            mLastFrame.~Frame();
+            new (&mLastFrame) Frame(mCurrentFrame);
+
             mvbPrevMatched.resize(mCurrentFrame.mvKeysUn.size());
             for(size_t i=0; i<mCurrentFrame.mvKeysUn.size(); i++)
                 mvbPrevMatched[i]=mCurrentFrame.mvKeysUn[i].pt;
@@ -2910,7 +2918,8 @@ void Tracking::CreateInitialMapMonocular()
     double aux = (mCurrentFrame.mTimeStamp-mLastFrame.mTimeStamp)/(mCurrentFrame.mTimeStamp-mInitialFrame.mTimeStamp);
     phi *= aux;
 
-    mLastFrame = Frame(mCurrentFrame);
+    mLastFrame.~Frame();
+    new (&mLastFrame) Frame(mCurrentFrame);
 
     mpAtlas->SetReferenceMapPoints(mvpLocalMapPoints);
 

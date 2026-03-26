@@ -224,6 +224,10 @@ namespace ORB_SLAM3
 
     int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPointMatches)
     {
+        // 防止参考帧被完全清空
+        if(pKF->mDescriptors.empty() || F.mDescriptors.empty()) {
+            return 0;
+        }
         const vector<MapPoint*> vpMapPointsKF = pKF->GetMapPointMatches();
 
         vpMapPointMatches = vector<MapPoint*>(F.N,static_cast<MapPoint*>(NULL));
@@ -254,6 +258,11 @@ namespace ORB_SLAM3
                 {
                     const unsigned int realIdxKF = vIndicesKF[iKF];
 
+                    // 防止参考帧的地图点或描述子被截断导致越界
+                    if(realIdxKF >= vpMapPointsKF.size() || realIdxKF >= pKF->mDescriptors.rows) {
+                        continue;
+                    }
+
                     MapPoint* pMP = vpMapPointsKF[realIdxKF];
 
                     if(!pMP)
@@ -277,6 +286,9 @@ namespace ORB_SLAM3
                         if(F.Nleft == -1){
                             const unsigned int realIdxF = vIndicesF[iF];
 
+                            // 保护当前帧描述子访问
+                            if(realIdxF >= F.mDescriptors.rows) continue;
+
                             if(vpMapPointMatches[realIdxF])
                                 continue;
 
@@ -297,6 +309,9 @@ namespace ORB_SLAM3
                         }
                         else{
                             const unsigned int realIdxF = vIndicesF[iF];
+
+                            //保护当前帧描述子访问
+                            if(realIdxF >= F.mDescriptors.rows) continue;
 
                             if(vpMapPointMatches[realIdxF])
                                 continue;
@@ -909,6 +924,11 @@ namespace ORB_SLAM3
     int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2,
                                            vector<pair<size_t, size_t> > &vMatchedPairs, const bool bOnlyStereo, const bool bCoarse)
     {
+        // 如果任意一个关键帧的描述子或特征点被异步清理了，直接放弃匹配，防止崩溃
+        if(pKF1->mDescriptors.empty() || pKF2->mDescriptors.empty() ||
+           pKF1->mvKeysUn.empty() || pKF2->mvKeysUn.empty()) {
+            return 0;
+        }
         const DBoW2::FeatureVector &vFeatVec1 = pKF1->mFeatVec;
         const DBoW2::FeatureVector &vFeatVec2 = pKF2->mFeatVec;
 
@@ -970,6 +990,11 @@ namespace ORB_SLAM3
                 {
                     const size_t idx1 = f1it->second[i1];
 
+                    // 防止后台截断数组导致索引越界
+                    if(idx1 >= pKF1->mvKeysUn.size() || idx1 >= pKF1->mDescriptors.rows) {
+                        continue;
+                    }
+
                     MapPoint* pMP1 = pKF1->GetMapPoint(idx1);
                     
                      
@@ -1000,6 +1025,11 @@ namespace ORB_SLAM3
                     for(size_t i2=0, iend2=f2it->second.size(); i2<iend2; i2++)
                     {
                         size_t idx2 = f2it->second[i2];
+
+                        // 防止后台截断数组导致索引越界
+                        if(idx2 >= pKF2->mvKeysUn.size() || idx2 >= pKF2->mDescriptors.rows) {
+                            continue;
+                        }
 
                         MapPoint* pMP2 = pKF2->GetMapPoint(idx2);
 

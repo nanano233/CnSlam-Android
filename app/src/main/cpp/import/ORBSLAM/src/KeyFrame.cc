@@ -340,12 +340,20 @@ int KeyFrame::GetNumberMPs()
 void KeyFrame::AddMapPoint(MapPoint *pMP, const size_t &idx)
 {
     unique_lock<mutex> lock(mMutexFeatures);
+    // 如果由于同步问题导致容量不够，强制安全扩容
+    if(idx >= mvpMapPoints.size()) {
+        mvpMapPoints.resize(idx + 1, static_cast<MapPoint*>(NULL));
+    }
     mvpMapPoints[idx]=pMP;
 }
 
 void KeyFrame::EraseMapPointMatch(const int &idx)
 {
     unique_lock<mutex> lock(mMutexFeatures);
+    // 越界直接返回，防止误擦除导致段错误
+    if(idx >= mvpMapPoints.size()) {
+        return;
+    }
     mvpMapPoints[idx]=static_cast<MapPoint*>(NULL);
 }
 
@@ -416,6 +424,10 @@ vector<MapPoint*> KeyFrame::GetMapPointMatches()
 MapPoint* KeyFrame::GetMapPoint(const size_t &idx)
 {
     unique_lock<mutex> lock(mMutexFeatures);
+    // [安全防线]：防止网络线程异步清理内存导致越界崩溃
+    if(idx >= mvpMapPoints.size()) {
+        return static_cast<MapPoint*>(NULL);
+    }
     return mvpMapPoints[idx];
 }
 

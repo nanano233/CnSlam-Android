@@ -32,6 +32,9 @@
 #include <boost/archive/binary_oarchive.hpp>
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
+#include <android/log.h>
+#define LOG_TAG "ORBSLAM_DEBUG"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 
 namespace ORB_SLAM3
@@ -205,10 +208,12 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
     //Initialize the Local Mapping thread and launch
     /////////////////////////////////CommSLAM///////////////////////////////////
+    LOGI("System: Creating LocalMapping...");
     mpLocalMapper = new LocalMapping(this, mpAtlas, mpKeyFrameDatabase, mpVocabulary, mpUncertainty,
                                      mSensor==MONOCULAR || mSensor==IMU_MONOCULAR,
                                      mSensor==IMU_MONOCULAR || mSensor==IMU_STEREO || mSensor==IMU_RGBD,
                                      mRunType, strSequence, serverIpIn, serverPortIn);
+    LOGI("System: LocalMapping created.");
     mptLocalMapping = new thread(&ORB_SLAM3::LocalMapping::Run,mpLocalMapper);
     mpLocalMapper->mInitFr = initFr;
     if(settings_)

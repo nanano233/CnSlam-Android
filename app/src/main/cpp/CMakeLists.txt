@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.4.1)
 project("hitomi")
 
+add_definitions(-DEIGEN_DONT_ALIGN_STATICALLY)
+add_definitions(-DEIGEN_DONT_VECTORIZE)
+add_definitions(-DDISABLE_SMI)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DEIGEN_DONT_ALIGN_STATICALLY -DEIGEN_DONT_VECTORIZE")
+
 # Cpp Debug
 add_library(SampleCpp SHARED
              SampleCpp.cpp)

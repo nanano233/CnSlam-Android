@@ -40,7 +40,7 @@ public class SystemMono {
 
         // 这里设置 AdaptSLAM 的参数，后续可以改为从 UI 获取
         String runType = "client";
-        String serverIp = "192.168.1.152"; // 请改为你的服务器实际IP
+        String serverIp = "192.168.1.161"; // 请改为你的服务器实际IP
         String serverPort = "10001";
 
         mpnSystem = nCreateSystemMono(fileCamParam, fileVoc, runType, serverIp, serverPort);
@@ -190,7 +190,7 @@ public class SystemMono {
     /**
      * 重新设置Yaml的内容
      */
-    static native int nPrepareSettingFile(String fileSetting,int height,int weight);
+//    static native int nPrepareSettingFile(String fileSetting,int height,int weight);
 
     /**
      * 加载词袋模型
@@ -208,7 +208,7 @@ public class SystemMono {
     static native void nDeleteSystemMono(long pSystem);
 
 
-    static native int nTrack(long pSystem, Bitmap bitmap,long timestamp);
+//    static native int nTrack(long pSystem, Bitmap bitmap,long timestamp);
     static native int nShutdown(long pSystem);
     static native void nReset(long pSystem);
 

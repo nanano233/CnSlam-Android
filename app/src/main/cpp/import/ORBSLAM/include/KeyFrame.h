@@ -45,6 +45,8 @@
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/serialization/set.hpp>
 
+#include <cmath>
+
 namespace ORB_SLAM3
 {
 
@@ -63,6 +65,20 @@ class KeyFrame
     template<class Archive>
     void serialize(Archive& ar, const unsigned int version)
     {
+        if (Archive::is_saving::value) {
+            // 1.清理基础位姿和速度
+            for(int i=0; i<3; i++) {
+                if(std::isnan(mOwb.data()[i]) || std::isinf(mOwb.data()[i])) mOwb.data()[i] = 0.0;
+                if(std::isnan(mVw.data()[i]) || std::isinf(mVw.data()[i])) mVw.data()[i] = 0.0;
+            }
+
+            // 2.清理 GBA 优化相关的隐藏速度变量
+            for(int i=0; i<3; i++) {
+                if(std::isnan(mVwbGBA.data()[i]) || std::isinf(mVwbGBA.data()[i])) mVwbGBA.data()[i] = 0.0;
+                if(std::isnan(mVwbBefGBA.data()[i]) || std::isinf(mVwbBefGBA.data()[i])) mVwbBefGBA.data()[i] = 0.0;
+            }
+        }
+
         //ar & nNextId;
         ar & mnId;
         ar & mnMapId;

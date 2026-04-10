@@ -170,6 +170,41 @@ public class MonoActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Log.i(TAG, "onDestroy: 正在销毁 MonoActivity，准备释放所有资源...");
+
+        // 1. 停止数据集循环读取标志位
+        mIsRunningDataset = false;
+
+        // 2. 清除 Handler 中所有未执行的排队任务 (包括 mRunTrack)，防止内存泄漏和后台崩溃
+        if (mHandler != null) {
+            mHandler.removeCallbacksAndMessages(null);
+        }
+
+        // 3. 释放相机资源
+        if (mCamera != null) {
+            mCamera.close();
+            mCamera = null;
+        }
+
+        // 4. 释放 IMU 资源
+        if (muIMU != null) {
+            muIMU.close();
+            muIMU = null;
+        }
+
+        // 5. 释放 SLAM 系统，通知底层和服务器断开连接
+        if (mSystem != null) {
+            Log.i(TAG, "正在调用 mSystem.release() 通知服务器断开连接...");
+            mSystem.release(); // 内部会调用 nShutdown -> system->Shutdown()
+            mSystem = null;
+            mSystemStage = "stop";
+        }
+
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
         glSurfaceView.onPause();
@@ -178,7 +213,9 @@ public class MonoActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        //glSurfaceView.onResume();
+        if (glSurfaceView != null) {
+            glSurfaceView.onResume();
+        }
     }
 
     private ImageReader.OnImageAvailableListener onImageAvailableListener = new ImageReader.OnImageAvailableListener()
@@ -448,7 +485,7 @@ public class MonoActivity extends AppCompatActivity {
             while ((line = br.readLine()) != null) {
                 if (line.startsWith("#")) continue;
 
-                // 修复1: 支持逗号或空格/Tab分割
+                // 支持逗号或空格/Tab分割
                 String[] parts = line.split("[,\\s]+");
 
                 if (parts.length >= 2) {
@@ -456,12 +493,11 @@ public class MonoActivity extends AppCompatActivity {
                     String imgFileName = parts[1].trim();
 
                     double t = Double.parseDouble(timeStr);
-                    // 修复2: 自动判断单位。如果时间戳数值很大（例如大于 1e12），通常是纳秒，否则认为是秒
+                    // 自动判断单位。如果时间戳数值很大（例如大于 1e12），通常是纳秒，否则认为是秒
                     double timestamp = (t > 1000000000000.0) ? t / 1e9 : t;
 
                     String fullPath = datasetDir + "/data/" + imgFileName;
-                    // 注意：TUM数据集的图片路径通常就在 datasetDir/rgb/ 下，不需要再加 /data/
-                    // 建议检查文件是否存在，或者根据数据集类型动态调整路径拼接逻辑
+
                     File imgFile = new File(datasetDir, imgFileName); // 尝试直接拼接
                     if(!imgFile.exists()) {
                         // 尝试 EuRoC 结构
@@ -487,7 +523,7 @@ public class MonoActivity extends AppCompatActivity {
     }
 
     private void startDatasetLoop() {
-        // [新增修复]：防止多个线程同时启动导致 C++ 底层内存被多线程踩踏
+        // 防止多个线程同时启动导致 C++ 底层内存被多线程踩踏
         if (mIsRunningDataset) {
             Log.w(TAG, "警告：数据集线程已在运行，拦截重复启动！");
             return;
@@ -496,7 +532,7 @@ public class MonoActivity extends AppCompatActivity {
         // 先设置标志位为 true，再启动线程，确保只进一次
         mIsRunningDataset = true;
 
-        // [新增修复]：强制停掉实况相机 Handler，防止相机数据和数据集数据打架
+        // 强制停掉实况相机 Handler，防止相机数据和数据集数据打架
         mHandler.removeCallbacks(mRunTrack);
 
         new Thread(() -> {
@@ -517,7 +553,7 @@ public class MonoActivity extends AppCompatActivity {
                 runOnUiThread(() -> new Thread(mTaskInitSystem).start());
             }
 
-            // 3. 先设置标志位，再等待！
+            // 3. 先设置标志位，再等待
             mIsRunningDataset = true;
 
             Log.i(TAG, "Waiting for SLAM system ready...");
@@ -540,17 +576,22 @@ public class MonoActivity extends AppCompatActivity {
                 // 等待系统初始化
                 // 如果 mSystem 还没初始化好 (mSystemStage)，可能需要等待或跳过
                 if (mSystem != null && "run".equals(mSystemStage)) {
-                    // 读取图片
-                    Bitmap bitmap = BitmapFactory.decodeFile(frame.imagePath);
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inScaled = false; // 禁止 Android 系统自动拉伸/缩放图片
+                    options.inDensity = 0;
+                    options.inTargetDensity = 0;
+
+                    // 读取图片时传入 options
+                    Bitmap bitmap = BitmapFactory.decodeFile(frame.imagePath, options);
                     if (bitmap == null) {
                         Log.e(TAG, "Decode image failed: " + frame.imagePath);
                         continue;
                     }
                     // 调用核心算法 (这里使用纯视觉接口，如果需要IMU需要另外处理)
-                    // [注意] 使用数据集的时间戳 frame.timestamp
+                    // 使用数据集的时间戳 frame.timestamp
                     mSystem.TrackingMono(bitmap, frame.timestamp);
 
-                    // 4. 更新UI (必须回到主线程)
+                    // 4. 更新UI
                     final Bitmap drawBmp = bitmap; // 指向被C++画过特征点的图(如果C++里修改了)或者原图
                     runOnUiThread(() -> {
                         // 更新 GLSurfaceView (地图)
@@ -567,7 +608,7 @@ public class MonoActivity extends AppCompatActivity {
                     });
                 }
 
-                // 5. 控制播放速度 (可选)
+                // 5. 控制播放速度
                 // 如果跑得太快，可以加一点 sleep
                 try {
                     Thread.sleep(30); // 约30fps
@@ -575,6 +616,20 @@ public class MonoActivity extends AppCompatActivity {
                     e.printStackTrace();
                 }
             }
+
+            Log.i(TAG, "Dataset finished. Shutting down system...");
+            if (mSystem != null) {
+                mSystem.release(); // 调用 system->Shutdown() 通知底层和服务器
+                mSystem = null;
+                mSystemStage = "stop"; // 更新状态
+
+                // 提示用户
+                runOnUiThread(() -> {
+                    Toast.makeText(mContext, "数据集运行完毕，已断开连接", Toast.LENGTH_SHORT).show();
+                    ((Button)findViewById(R.id.SLAM_START)).setText("已停止");
+                });
+            }
+
         }).start();
     }
 

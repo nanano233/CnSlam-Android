@@ -54,6 +54,13 @@ class MapPoint
     template<class Archive>
     void serialize(Archive & ar, const unsigned int version)
     {
+        // ====== 拦截毒性 NaN 乱码 ======
+        if (Archive::is_saving::value) {
+            for(int i=0; i<3; i++) {
+                if(std::isnan(mPosGBA[i]) || std::isinf(mPosGBA[i])) mPosGBA[i] = 0;
+            }
+        }
+        // ============================
         ar & mnId;
         //ar & nNextId;
         ar & mnFirstKFid;

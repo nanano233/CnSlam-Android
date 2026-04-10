@@ -136,6 +136,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nShutdown(JNIEnv *env, jclass
 
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
     system->Shutdown();
+    return 0;
 }
 
 extern "C"
@@ -191,7 +192,8 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
     Sophus::SE3f Tcw = system->TrackMonocular(safeInputGray, second);
 
     // 5. 直接在原图绘制特征点
-    input = frame_draw_fast(&input, system->GetTrackedKeyPointsUn(), cv::Scalar(0, 255, 0), 2.0f);
+    std::vector<cv::KeyPoint> rawKeypoints = system->mpTracker->mCurrentFrame.mvKeys;
+    input = frame_draw_fast(&input, rawKeypoints, cv::Scalar(0, 255, 0), 1.0f);
     cv::mat2Bitmap(env, bitmap, input);
 
     return 0;
@@ -341,7 +343,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMonoIMU(JNIEnv
         Sophus::SE3f Tcw = system->TrackMonocular(safeInputGray, second, -1, imupoints);
 
         // 5.画特征点
-        input = frame_draw_fast(&input, system->GetTrackedKeyPointsUn(), cv::Scalar(0,255,0), 2.0f);
+        input = frame_draw_fast(&input, system->GetTrackedKeyPointsUn(), cv::Scalar(0,255,0), 1.0f);
     }
     catch(int err) {
         __android_log_print(ANDROID_LOG_ERROR, TAG, "Track Error %X",err);

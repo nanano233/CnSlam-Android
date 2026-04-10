@@ -74,32 +74,55 @@ void serializeDiagonalMatrix(Archive &ar, Eigen::DiagonalMatrix<float, dim> &D, 
     }
 }
 
-template<class Archive>
-void serializeMatrix(Archive& ar, cv::Mat& mat, const unsigned int version)
-{
-    int cols, rows, type;
-    bool continuous;
+    template<class Archive>
+    void serializeMatrix(Archive& ar, cv::Mat& mat, const unsigned int version)
+    {
+        int cols, rows, type;
+        bool continuous;
 
-    if (Archive::is_saving::value) {
-        cols = mat.cols; rows = mat.rows; type = mat.type();
-        continuous = mat.isContinuous();
-    }
+        if (Archive::is_saving::value) {
+            cols = mat.cols; rows = mat.rows; type = mat.type();
+            continuous = mat.isContinuous();
+        }
 
-    ar & cols & rows & type & continuous;
+        ar & cols & rows & type & continuous;
 
-    if (Archive::is_loading::value)
-        mat.create(rows, cols, type);
+        if (Archive::is_loading::value)
+            mat.create(rows, cols, type);
 
-    if (continuous) {
-        const unsigned int data_size = rows * cols * mat.elemSize();
-        ar & boost::serialization::make_array(mat.ptr(), data_size);
-    } else {
-        const unsigned int row_size = cols*mat.elemSize();
-        for (int i = 0; i < rows; i++) {
-            ar & boost::serialization::make_array(mat.ptr(i), row_size);
+        if (continuous) {
+            const unsigned int data_size = rows * cols * mat.elemSize();
+            if (Archive::is_saving::value) {
+                for (unsigned int i = 0; i < data_size; i++) {
+                    // 将二进制字节强转为安全的数字文本
+                    unsigned int val = (unsigned char)mat.ptr()[i];
+                    ar & val;
+                }
+            } else {
+                for (unsigned int i = 0; i < data_size; i++) {
+                    unsigned int val;
+                    ar & val;
+                    mat.ptr()[i] = (unsigned char)val;
+                }
+            }
+        } else {
+            const unsigned int row_size = cols*mat.elemSize();
+            for (int i = 0; i < rows; i++) {
+                if (Archive::is_saving::value) {
+                    for (unsigned int j = 0; j < row_size; j++) {
+                        unsigned int val = (unsigned char)mat.ptr(i)[j];
+                        ar & val;
+                    }
+                } else {
+                    for (unsigned int j = 0; j < row_size; j++) {
+                        unsigned int val;
+                        ar & val;
+                        mat.ptr(i)[j] = (unsigned char)val;
+                    }
+                }
+            }
         }
     }
-}
 
 template<class Archive>
 void serializeMatrix(Archive& ar, const cv::Mat& mat, const unsigned int version)

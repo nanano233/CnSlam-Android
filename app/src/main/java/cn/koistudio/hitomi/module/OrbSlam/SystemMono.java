@@ -158,12 +158,12 @@ public class SystemMono {
     /**
      * 释放资源前必须调用
      */
-    public void release()
+    public synchronized void release() // 加上 synchronized 防止多线程双重释放
     {
-        if(this.mpnSystem!=0) {
+        if(this.mpnSystem != 0) {
             nShutdown(this.mpnSystem);
             nDeleteSystemMono(this.mpnSystem);
-            this.mpnSystem = 0;
+            this.mpnSystem = 0; // 置零确保即使被调用两次也是安全的
         }
 
 //        if(mpVocabulary!=0)

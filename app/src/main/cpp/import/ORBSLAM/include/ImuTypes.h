@@ -146,6 +146,21 @@ class Preintegrated
     template<class Archive>
     void serialize(Archive & ar, const unsigned int version)
     {
+        // ====== 拦截毒性 NaN 乱码 ======
+        if (Archive::is_saving::value) {
+            // 清理向量
+            for(int i=0; i<3; i++) {
+                if(std::isnan(dV[i]) || std::isinf(dV[i])) dV[i] = 0;
+                if(std::isnan(dP[i]) || std::isinf(dP[i])) dP[i] = 0;
+                if(std::isnan(avgA[i]) || std::isinf(avgA[i])) avgA[i] = 0;
+                if(std::isnan(avgW[i]) || std::isinf(avgW[i])) avgW[i] = 0;
+            }
+            // 清理矩阵
+            for(int i=0; i<9; i++) {
+                if(std::isnan(dR.data()[i]) || std::isinf(dR.data()[i])) dR.data()[i] = 0;
+            }
+        }
+        // ============================
         ar & dT;
         ar & boost::serialization::make_array(C.data(), C.size());
         ar & boost::serialization::make_array(Info.data(), Info.size());

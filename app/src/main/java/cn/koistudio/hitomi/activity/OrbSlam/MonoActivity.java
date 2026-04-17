@@ -370,6 +370,16 @@ public class MonoActivity extends AppCompatActivity {
             if(filenameVoc!=null||filenameParam!=null)
             {
                 mSystem = new SystemMono(mCamera,filenameVoc,filenameParam);
+
+                // ==================== 新增：在此处初始化 YOLO ====================
+                // 传入 AssetManager 让 C++ 底层能读取 yolov8n.param 和 yolov8n.bin
+                boolean yoloReady = mSystem.nInitYOLO(mContext.getAssets());
+                if (yoloReady) {
+                    Log.i(TAG, "YOLOv8 初始化成功，动态掩码已启用！");
+                } else {
+                    Log.e(TAG, "YOLOv8 初始化失败！");
+                }
+                // ===============================================================
                 mSystemStage = "run";
 
                 // TODO: 通知用户
@@ -538,7 +548,7 @@ public class MonoActivity extends AppCompatActivity {
         new Thread(() -> {
             // 1. 加载数据集路径
             File sdcard = android.os.Environment.getExternalStorageDirectory();
-            File datasetIndexFile = new File(sdcard, "SLAM/dataset/cam0/data.csv");
+            File datasetIndexFile = new File(sdcard, "SLAM/rgbd_dataset_freiburg3_walking_xyz/rgb.txt");
             loadDataset(datasetIndexFile.getAbsolutePath());
 
             if (mDatasetFrames.isEmpty()) {

@@ -124,7 +124,7 @@ public:
     // Returns the camera pose (empty if tracking fails).
     
     /////////////////////////CommSLAM///////////////////////
-    Sophus::SE3f TrackMonocular(const cv::Mat &im, const double &timestamp, int ID = -1, const vector<IMU::Point>& vImuMeas = vector<IMU::Point>(), string filename="");
+    Sophus::SE3f TrackMonocular(const cv::Mat &im, const double &timestamp, int ID = -1, const vector<IMU::Point>& vImuMeas = vector<IMU::Point>(), string filename="", const cv::Mat &mask = cv::Mat());
 
 
     // This stops local mapping thread (map building) and performs only camera tracking.

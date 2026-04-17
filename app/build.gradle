@@ -5,7 +5,7 @@ plugins {
 android {
     namespace "cn.koistudio.hitomi"
     compileSdk 34
-    ndkVersion '25.2.9519653'
+    ndkVersion '26.3.11579264'
 
     defaultConfig {
         applicationId "cn.koistudio.hitomi"
@@ -19,7 +19,7 @@ android {
             cmake {
                 arguments "-DANDROID_STL=c++_shared"
 
-                cppFlags "-std=c++14 -frtti -fexceptions -DEIGEN_DONT_ALIGN_STATICALLY -DEIGEN_DONT_VECTORIZE -DDISABLE_SMI"
+                cppFlags "-std=c++14 -frtti -fexceptions -DEIGEN_DONT_ALIGN_STATICALLY -DEIGEN_DONT_VECTORIZE -DDISABLE_SMI -fexceptions"
                 cFlags "-DEIGEN_DONT_ALIGN_STATICALLY -DEIGEN_DONT_VECTORIZE -DDISABLE_SMI"
             }
         }

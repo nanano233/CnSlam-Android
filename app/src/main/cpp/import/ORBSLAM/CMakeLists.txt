@@ -83,11 +83,28 @@ add_library(ORBSLAM SHARED
         nViewer.hpp
 )
 
+# ==================== NCNN 配置 ====================
+set(ncnn_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ncnn/${ANDROID_ABI}/lib/cmake/ncnn)
+find_package(ncnn REQUIRED)
+
+# 1. 包含 NCNN 头文件
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../ncnn/${ANDROID_ABI}/include/ncnn)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../ncnn/${ANDROID_ABI}/include)
+
+# 2. 清除 NCNN 传染的禁用标志
+set_target_properties(ncnn PROPERTIES INTERFACE_COMPILE_OPTIONS "")
+
+# 3. 全局替换掉任何可能潜伏的 -fno-rtti 和 -fno-exceptions
+string(REPLACE "-fno-rtti" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+string(REPLACE "-fno-exceptions" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+# ========================================================
+
 # 7. 链接 JNI 库与核心库
 target_link_libraries(ORBSLAM
         lib_adaptslam
+        ncnn
         android
         log)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -O3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -O3 -fexceptions")
 add_definitions(-DEIGEN_DONT_ALIGN_STATICALLY)

@@ -427,7 +427,7 @@ Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const
 }
 
 //////////////////////////CommSLAM//////////////////////////
-Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, int ID, const vector<IMU::Point>& vImuMeas, string filename)
+Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, int ID, const vector<IMU::Point>& vImuMeas, string filename, const cv::Mat &mask)
 {
 
     {
@@ -495,7 +495,7 @@ Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, 
             mpTracker->GrabImuData(vImuMeas[i_imu]);
     
 
-    Sophus::SE3f Tcw = mpTracker->GrabImageMonocular(imToFeed,timestamp, ID, filename);
+    Sophus::SE3f Tcw = mpTracker->GrabImageMonocular(imToFeed,timestamp, ID, filename, mask);
         
     unique_lock<mutex> lock2(mMutexState);
     mTrackingState = mpTracker->mState;

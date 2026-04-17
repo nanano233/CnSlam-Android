@@ -532,6 +532,51 @@ public class MonoActivity extends AppCompatActivity {
         }
     }
 
+    // 保存解析后的所有 IMU 数据
+    private List<ImuData> mDatasetImu = new java.util.ArrayList<>();
+
+    // 读取 IMU 数据集 (imu0/data.csv)
+    private void loadImuDataset(String indexFilePath) {
+        try {
+            File file = new File(indexFilePath);
+            if (!file.exists()) {
+                Log.e(TAG, "IMU file not found: " + indexFilePath);
+                return;
+            }
+            BufferedReader br = new BufferedReader(new FileReader(file));
+            String line;
+
+            while ((line = br.readLine()) != null) {
+                if (line.startsWith("#")) continue;
+
+                String[] parts = line.split("[,\\s]+");
+                if (parts.length >= 7) {
+                    double t = Double.parseDouble(parts[0].trim());
+                    double timestamp = (t > 1000000000000.0) ? t / 1e9 : t; // 转为秒
+
+                    // EuRoC 格式: t, wx, wy, wz, ax, ay, az
+                    double gx = Double.parseDouble(parts[1].trim());
+                    double gy = Double.parseDouble(parts[2].trim());
+                    double gz = Double.parseDouble(parts[3].trim());
+                    double ax = Double.parseDouble(parts[4].trim());
+                    double ay = Double.parseDouble(parts[5].trim());
+                    double az = Double.parseDouble(parts[6].trim());
+
+                    mDatasetImu.add(new ImuData(timestamp, ax, ay, az, gx, gy, gz));
+                }
+            }
+            br.close();
+
+            // 确保按时间顺序排序
+            Collections.sort(mDatasetImu, (o1, o2) -> Double.compare(o1.timestamp, o2.timestamp));
+            Log.i(TAG, "IMU Dataset loaded: " + mDatasetImu.size() + " records.");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            Log.e(TAG, "Failed to load IMU dataset: " + e.getMessage());
+        }
+    }
+
     private void startDatasetLoop() {
         // 防止多个线程同时启动导致 C++ 底层内存被多线程踩踏
         if (mIsRunningDataset) {
@@ -551,8 +596,12 @@ public class MonoActivity extends AppCompatActivity {
             File datasetIndexFile = new File(sdcard, "SLAM/rgbd_dataset_freiburg3_walking_xyz/rgb.txt");
             loadDataset(datasetIndexFile.getAbsolutePath());
 
+            // 2. 加载 IMU 数据集
+            File imuIndexFile = new File(sdcard, "SLAM/dataset/imu0/data.csv");
+            loadImuDataset(imuIndexFile.getAbsolutePath());
+
             if (mDatasetFrames.isEmpty()) {
-                runOnUiThread(() -> Toast.makeText(mContext, "未找到数据集", Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> Toast.makeText(mContext, "未找到数据集或IMU数据集", Toast.LENGTH_LONG).show());
                 return;
             }
             Log.i(TAG, "Dataset loaded. Frames: " + mDatasetFrames.size());
@@ -576,6 +625,8 @@ public class MonoActivity extends AppCompatActivity {
                 }
                 try { Thread.sleep(500); } catch (Exception e) {}
             }
+            // 用于跟踪当前读到哪一条 IMU 数据了
+            int currentImuIndex = 0;
 
             // 开始遍历帧
             for (int i = 0; i < mDatasetFrames.size(); i++) {
@@ -597,9 +648,32 @@ public class MonoActivity extends AppCompatActivity {
                         Log.e(TAG, "Decode image failed: " + frame.imagePath);
                         continue;
                     }
-                    // 调用核心算法 (这里使用纯视觉接口，如果需要IMU需要另外处理)
-                    // 使用数据集的时间戳 frame.timestamp
-                    mSystem.TrackingMono(bitmap, frame.timestamp);
+//                    // 调用核心算法 (这里使用纯视觉接口，如果需要IMU需要另外处理)
+//                    // 使用数据集的时间戳 frame.timestamp
+//                    mSystem.TrackingMono(bitmap, frame.timestamp);
+
+                    // 打包从上一次到当前图片时间戳之间的所有 IMU 数据
+                    List<double[]> vImuMeas = new java.util.ArrayList<>();
+                    while (currentImuIndex < mDatasetImu.size()) {
+                        ImuData imu = mDatasetImu.get(currentImuIndex);
+
+                        // 如果 IMU 的时间戳小于等于当前图片的时间戳，就装进去
+                        if (imu.timestamp <= frame.timestamp) {
+                            // SystemMono 期望的数组格式：[ax, ay, az, gx, gy, gz, timestamp]
+                            double[] imuPoint = new double[7];
+                            imuPoint[0] = imu.ax; imuPoint[1] = imu.ay; imuPoint[2] = imu.az;
+                            imuPoint[3] = imu.gx; imuPoint[4] = imu.gy; imuPoint[5] = imu.gz;
+                            imuPoint[6] = imu.timestamp;
+                            vImuMeas.add(imuPoint);
+                            currentImuIndex++;
+                        } else {
+                            // IMU 跑到图片前面去了，跳出循环，等待下一张图片
+                            break;
+                        }
+                    }
+
+                    // 调用带有 IMU 的接口
+                    mSystem.TrackingMonoIMU(bitmap, frame.timestamp, vImuMeas);
 
                     // 4. 更新UI
                     final Bitmap drawBmp = bitmap; // 指向被C++画过特征点的图(如果C++里修改了)或者原图
@@ -679,5 +753,17 @@ class FrameData {
     public FrameData(String path, double time) {
         this.imagePath = path;
         this.timestamp = time;
+    }
+}
+// 用于保存每一行 IMU 数据的结构
+class ImuData {
+    double timestamp;
+    double ax, ay, az;
+    double gx, gy, gz;
+
+    public ImuData(double time, double ax, double ay, double az, double gx, double gy, double gz) {
+        this.timestamp = time;
+        this.ax = ax; this.ay = ay; this.az = az;
+        this.gx = gx; this.gy = gy; this.gz = gz;
     }
 }

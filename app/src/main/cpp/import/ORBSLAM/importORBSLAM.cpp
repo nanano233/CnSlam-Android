@@ -25,6 +25,8 @@
 #include <android/asset_manager_jni.h>
 #include <opencv2/dnn.hpp>
 
+#include <exception>
+
 static const char* TAG = "ORBSLAM";
 
 // 定义检测结果结构
@@ -234,14 +236,23 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateSystemMono(JNIEnv *env
     ORB_SLAM3::System* system = 0;
     try
     {
-        // 调用System 构造函数
+        // 调用修改后的 System 构造函数
+//        system = new ORB_SLAM3::System(filename_voctxt_str, filename_setting_str,
+//                                       ORB_SLAM3::System::MONOCULAR, false, 0, "Android",
+//                                       string(run_type_str), string(server_ip_str), string(server_port_str));
         system = new ORB_SLAM3::System(filename_voctxt_str, filename_setting_str,
-                                       ORB_SLAM3::System::MONOCULAR, false, 0, "Android",
+                                       ORB_SLAM3::System::IMU_MONOCULAR, false, 0, "Android",
                                        string(run_type_str), string(server_ip_str), string(server_port_str));
     }
-    catch(int err)
-    {
-        __android_log_print(ANDROID_LOG_INFO, TAG, "catch error %d",err);
+    catch(const std::exception& e) {
+        // 把 OpenCV 的格式错误打印在 Logcat 里
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "C++ FATAL EXCEPTION: %s", e.what());
+    }
+    catch(int err) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "catch error %d", err);
+    }
+    catch(...) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "Unknown C++ crash");
     }
 
 

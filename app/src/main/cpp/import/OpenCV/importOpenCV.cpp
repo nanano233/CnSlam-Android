@@ -37,9 +37,9 @@ int cv::mat2Bitmap(JNIEnv *env, jobject bitmap, cv::Mat mat)
     if (info.format == ANDROID_BITMAP_FORMAT_RGBA_8888) {
 
         Mat pointer(info.height, info.width, CV_8UC4, pixels);
-        AndroidBitmap_unlockPixels(env, bitmap);
         cvtColor(mat, mat, CV_RGB2BGR);
         cvtColor(mat, pointer, CV_BGR2RGBA);
+        AndroidBitmap_unlockPixels(env, bitmap);
         return 0;
 
     }
@@ -80,8 +80,9 @@ cv::Mat cv::bitmap2Mat(JNIEnv *env, jobject bitmap)
 
     if (info.format == ANDROID_BITMAP_FORMAT_RGBA_8888){
 
-        Mat dst(info.height, info.width, CV_8UC4, pixels);
-        cvtColor(dst, dst, CV_RGBA2RGB);
+        Mat rgba(info.height, info.width, CV_8UC4, pixels);
+        Mat dst;
+        cvtColor(rgba, dst, CV_RGBA2RGB);
         AndroidBitmap_unlockPixels(env, bitmap);
         return dst;
 

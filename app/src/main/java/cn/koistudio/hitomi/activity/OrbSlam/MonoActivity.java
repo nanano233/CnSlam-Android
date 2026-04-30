@@ -31,7 +31,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
-import java.util.ArrayList;
 import java.util.Collections;
 
 import cn.koistudio.hitomi.R;
@@ -275,8 +274,8 @@ public class MonoActivity extends AppCompatActivity {
                         if(mSystemStage=="run") {
 
                             // TODO: 输入图像
-                            // mSystem.TrackingMono(tmBitmap,tmTimestamp);
-                            mSystem.TrackingMonoIMU(tmBitmap, tmTimestamp, _imu);
+                            mSystem.TrackingMono(tmBitmap, tmTimestamp);
+                            // 如需 IMU 模式，改为: mSystem.TrackingMonoIMU(tmBitmap, tmTimestamp, _imu);
 
                             // TODO: set 现在照相机位置
                             mMapRender.setCameraMatrix(mSystem.mPose);
@@ -359,20 +358,24 @@ public class MonoActivity extends AppCompatActivity {
             String yamlFileName = "CameraParam.yaml"; // 默认用手机相机的
 
             // 这里加一个简单的判断逻辑，或者由 UI 传入
-            // 如果主要在测试数据集，建议先强制改为数据集的配置
+            // 如果主要在测试数据集，先强制改为数据集的配置
             boolean isDatasetMode = true;
             if (isDatasetMode) {
-                yamlFileName = "PARAconfig.yaml"; // 请确保 assets 里有这个文件
+                yamlFileName = "TUM3.yaml"; // 请确保 assets 里有这个文件
             }
 
             String filenameParam = uAssets.prepareAsset(mContext, yamlFileName);
 
-            if(filenameVoc!=null||filenameParam!=null)
+            if(filenameVoc!=null && filenameParam!=null)
             {
-                mSystem = new SystemMono(mCamera,filenameVoc,filenameParam);
+                // 根据配置文件名自动选择传感器类型
+                int sensorType = SystemMono.MONOCULAR;
+                if (yamlFileName.contains("EuRoC") || yamlFileName.contains("ADVIO")) {
+                    sensorType = SystemMono.IMU_MONOCULAR;
+                }
+                mSystem = new SystemMono(mCamera, filenameVoc, filenameParam, sensorType);
 
-                // ==================== 新增：在此处初始化 YOLO ====================
-                // 传入 AssetManager 让 C++ 底层能读取 yolov8n.param 和 yolov8n.bin
+                // ==================== 在此处初始化 YOLO ====================
                 boolean yoloReady = mSystem.nInitYOLO(mContext.getAssets());
                 if (yoloReady) {
                     Log.i(TAG, "YOLOv8 初始化成功，动态掩码已启用！");
@@ -483,7 +486,7 @@ public class MonoActivity extends AppCompatActivity {
     // 保存解析后的所有帧
     private List<FrameData> mDatasetFrames = new java.util.ArrayList<>();
 
-    // 读取数据集索引文件 (例如 data.csv)
+    // 读取数据集索引文件
     private void loadDataset(String indexFilePath) {
         try {
             File file = new File(indexFilePath);
@@ -535,7 +538,7 @@ public class MonoActivity extends AppCompatActivity {
     // 保存解析后的所有 IMU 数据
     private List<ImuData> mDatasetImu = new java.util.ArrayList<>();
 
-    // 读取 IMU 数据集 (imu0/data.csv)
+    // 读取 IMU 数据集
     private void loadImuDataset(String indexFilePath) {
         try {
             File file = new File(indexFilePath);
@@ -545,6 +548,10 @@ public class MonoActivity extends AppCompatActivity {
             }
             BufferedReader br = new BufferedReader(new FileReader(file));
             String line;
+            // //  advio-13 专属的 Bias 修正参数
+            // double bias_ax = 0.0415, bias_ay = -0.0617, bias_az = 0.1008;
+            // double bias_gx = -0.0065, bias_gy = 0.0055, bias_gz = -0.0064;
+            // final double G_GRAVITY = 9.81;
 
             while ((line = br.readLine()) != null) {
                 if (line.startsWith("#")) continue;
@@ -564,6 +571,24 @@ public class MonoActivity extends AppCompatActivity {
 
                     mDatasetImu.add(new ImuData(timestamp, ax, ay, az, gx, gy, gz));
                 }
+                // if (parts.length >= 8) {
+                //     double t = Double.parseDouble(parts[0].trim());
+                //     if ((int)Double.parseDouble(parts[1].trim()) == 34) {
+                //         double timestamp = t; // ADVIO 时间戳为秒
+
+                //         // 扣除陀螺仪误差
+                //         double gx = Double.parseDouble(parts[2].trim()) - bias_gx;
+                //         double gy = Double.parseDouble(parts[3].trim()) - bias_gy;
+                //         double gz = Double.parseDouble(parts[4].trim()) - bias_gz;
+
+                //         // 扣除加速度误差，并转为 m/s²
+                //         double ax = (Double.parseDouble(parts[5].trim()) - bias_ax) * G_GRAVITY;
+                //         double ay = (Double.parseDouble(parts[6].trim()) - bias_ay) * G_GRAVITY;
+                //         double az = (Double.parseDouble(parts[7].trim()) - bias_az) * G_GRAVITY;
+
+                //         mDatasetImu.add(new ImuData(timestamp, ax, ay, az, gx, gy, gz));
+                //     }
+                // }
             }
             br.close();
 
@@ -593,12 +618,14 @@ public class MonoActivity extends AppCompatActivity {
         new Thread(() -> {
             // 1. 加载数据集路径
             File sdcard = android.os.Environment.getExternalStorageDirectory();
-            File datasetIndexFile = new File(sdcard, "SLAM/dataset/cam0/data.csv");
+            File datasetIndexFile = new File(sdcard, "SLAM/rgbd_dataset_freiburg3_walking_xyz/rgb.txt");
+            //File datasetIndexFile = new File(sdcard, "SLAM/advio-13/data.csv");
             loadDataset(datasetIndexFile.getAbsolutePath());
 
-            // 2. 加载 IMU 数据集
-            File imuIndexFile = new File(sdcard, "SLAM/dataset/imu0/data.csv");
-            loadImuDataset(imuIndexFile.getAbsolutePath());
+//            // 2. 加载 IMU 数据集
+//            File imuIndexFile = new File(sdcard, "SLAM/dataset/imu0/data.csv");
+//            //File imuIndexFile = new File(sdcard, "SLAM/advio-13/imu-gyro.csv");
+//            loadImuDataset(imuIndexFile.getAbsolutePath());
 
             if (mDatasetFrames.isEmpty()) {
                 runOnUiThread(() -> Toast.makeText(mContext, "未找到数据集或IMU数据集", Toast.LENGTH_LONG).show());
@@ -648,32 +675,32 @@ public class MonoActivity extends AppCompatActivity {
                         Log.e(TAG, "Decode image failed: " + frame.imagePath);
                         continue;
                     }
-//                    // 调用核心算法 (这里使用纯视觉接口，如果需要IMU需要另外处理)
-//                    // 使用数据集的时间戳 frame.timestamp
-//                    mSystem.TrackingMono(bitmap, frame.timestamp);
+                    // 调用核心算法 (这里使用纯视觉接口)
+                    // 使用数据集的时间戳 frame.timestamp
+                    mSystem.TrackingMono(bitmap, frame.timestamp);
 
-                    // 打包从上一次到当前图片时间戳之间的所有 IMU 数据
-                    List<double[]> vImuMeas = new java.util.ArrayList<>();
-                    while (currentImuIndex < mDatasetImu.size()) {
-                        ImuData imu = mDatasetImu.get(currentImuIndex);
-
-                        // 如果 IMU 的时间戳小于等于当前图片的时间戳，就装进去
-                        if (imu.timestamp <= frame.timestamp) {
-                            // SystemMono 期望的数组格式：[ax, ay, az, gx, gy, gz, timestamp]
-                            double[] imuPoint = new double[7];
-                            imuPoint[0] = imu.ax; imuPoint[1] = imu.ay; imuPoint[2] = imu.az;
-                            imuPoint[3] = imu.gx; imuPoint[4] = imu.gy; imuPoint[5] = imu.gz;
-                            imuPoint[6] = imu.timestamp;
-                            vImuMeas.add(imuPoint);
-                            currentImuIndex++;
-                        } else {
-                            // IMU 跑到图片前面去了，跳出循环，等待下一张图片
-                            break;
-                        }
-                    }
-
-                    // 调用带有 IMU 的接口
-                    mSystem.TrackingMonoIMU(bitmap, frame.timestamp, vImuMeas);
+//                    // 打包从上一次到当前图片时间戳之间的所有 IMU 数据
+//                    List<double[]> vImuMeas = new java.util.ArrayList<>();
+//                    while (currentImuIndex < mDatasetImu.size()) {
+//                        ImuData imu = mDatasetImu.get(currentImuIndex);
+//
+//                        // 如果 IMU 的时间戳小于等于当前图片的时间戳，就装进去
+//                        if (imu.timestamp <= frame.timestamp) {
+//                            // SystemMono 期望的数组格式：[ax, ay, az, gx, gy, gz, timestamp]
+//                            double[] imuPoint = new double[7];
+//                            imuPoint[0] = imu.ax; imuPoint[1] = imu.ay; imuPoint[2] = imu.az;
+//                            imuPoint[3] = imu.gx; imuPoint[4] = imu.gy; imuPoint[5] = imu.gz;
+//                            imuPoint[6] = imu.timestamp;
+//                            vImuMeas.add(imuPoint);
+//                            currentImuIndex++;
+//                        } else {
+//                            // IMU 跑到图片前面去了，跳出循环，等待下一张图片
+//                            break;
+//                        }
+//                    }
+//
+//                    // 调用带有 IMU 的接口
+//                    mSystem.TrackingMonoIMU(bitmap, frame.timestamp, vImuMeas);
 
                     // 4. 更新UI
                     final Bitmap drawBmp = bitmap; // 指向被C++画过特征点的图(如果C++里修改了)或者原图
@@ -700,6 +727,86 @@ public class MonoActivity extends AppCompatActivity {
                     e.printStackTrace();
                 }
             }
+//            // 用于跟踪当前读到哪一条 IMU 数据了
+//            int currentImuIndex = 0;
+//
+//            // 记录第一帧的时间，用于跳过前 0.5 秒
+//            double firstTimestamp = -1;
+//            int frameCount = 0;
+//
+//            // 开始遍历帧
+//            for (int i = 0; i < mDatasetFrames.size(); i++) {
+//                if (!mIsRunningDataset) break;
+//
+//                FrameData frame = mDatasetFrames.get(i);
+//                if (firstTimestamp < 0) firstTimestamp = frame.timestamp;
+//
+//                // ====================  1：剔除官方要求的 0.5 秒预热期 ====================
+//                if (frame.timestamp - firstTimestamp < 0.5) {
+//                    continue; // 直接跳过，IMU 数据会自然累积到下一帧
+//                }
+//
+////                // ====================  2：强制降频到 20 FPS ====================
+////                frameCount++;
+////                if (frameCount % 3 != 0) { // 每 3 帧只取 1 帧 (60fps -> 20fps)
+////                    continue; // 缓解手机 CPU 压力，彻底避免多线程抢占崩溃
+////                }
+//
+//                // 正常打包从上一次到当前图片时间戳之间的所有 IMU 数据
+//                List<double[]> vImuMeas = new java.util.ArrayList<>();
+//                while (currentImuIndex < mDatasetImu.size()) {
+//                    ImuData imu = mDatasetImu.get(currentImuIndex);
+//                    if (imu.timestamp <= frame.timestamp) {
+//                        double[] imuPoint = new double[7];
+//                        imuPoint[0] = imu.ax; imuPoint[1] = imu.ay; imuPoint[2] = imu.az;
+//                        imuPoint[3] = imu.gx; imuPoint[4] = imu.gy; imuPoint[5] = imu.gz;
+//                        imuPoint[6] = imu.timestamp;
+//                        vImuMeas.add(imuPoint);
+//                        currentImuIndex++;
+//                    } else {
+//                        break;
+//                    }
+//                }
+//
+//                // ====================  拦截空 IMU 图像 ====================
+//                if (vImuMeas.isEmpty()) {
+//                    continue;
+//                }
+//
+//                if (mSystem != null && "run".equals(mSystemStage)) {
+//                    BitmapFactory.Options options = new BitmapFactory.Options();
+//                    options.inScaled = false;
+//                    Bitmap bitmap = BitmapFactory.decodeFile(frame.imagePath, options);
+//                    if (bitmap == null) continue;
+//
+//                    // 喂给底层
+//                    mSystem.TrackingMonoIMU(bitmap, frame.timestamp, vImuMeas);
+//
+//                    // 更新UI
+//                    final Bitmap drawBmp = bitmap;
+//                    runOnUiThread(() -> {
+//                        // 更新 GLSurfaceView (地图)
+//                        mMapRender.setCameraMatrix(mSystem.mPose);
+//                        mMapRender.setCoords(mSystem.mMapPoints);
+//                        glSurfaceView.requestRender();
+//
+//                        // 更新左下角相机预览
+//                        ImageView imageView = findViewById(R.id.SLAM_IMG_CAM);
+//                        imageView.setImageBitmap(drawBmp);
+//
+//                        ((TextView)findViewById(R.id.SLAM_MESSAGE)).setText(mSystem.getTrackingStateStringCN());
+//                        ((TextView)findViewById(R.id.SLAM_STATE)).setText("Frame: " + frame.timestamp);
+//                    });
+//                }
+//
+//                // 5. 控制播放速度
+//                // 如果跑得太快，可以加一点 sleep
+//                try {
+//                    Thread.sleep(30); // 约30fps
+//                } catch (InterruptedException e) {
+//                    e.printStackTrace();
+//                }
+//            }
 
             Log.i(TAG, "Dataset finished. Shutting down system...");
             if (mSystem != null) {

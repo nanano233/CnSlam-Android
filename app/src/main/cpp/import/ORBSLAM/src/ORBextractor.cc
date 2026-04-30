@@ -1100,6 +1100,37 @@ namespace ORB_SLAM3
         ComputeKeyPointsOctTree(allKeypoints);
         //ComputeKeyPointsOld(allKeypoints);
 
+        // 后过滤：去除掩码区域内的特征点
+        if (!_mask.empty())
+        {
+            Mat mask = _mask.getMat();
+            if (mask.type() == CV_8UC1 && !mask.empty())
+            {
+                for (int level = 0; level < nlevels; ++level)
+                {
+                    vector<KeyPoint>& keypoints = allKeypoints[level];
+                    float scale = mvScaleFactor[level];
+                    vector<KeyPoint> filtered;
+                    filtered.reserve(keypoints.size());
+                    for (const KeyPoint& kp : keypoints)
+                    {
+                        int mx = (int)(kp.pt.x * scale);
+                        int my = (int)(kp.pt.y * scale);
+                        if (mx >= 0 && mx < mask.cols && my >= 0 && my < mask.rows)
+                        {
+                            if (mask.at<uchar>(my, mx) != 0)
+                                filtered.push_back(kp);
+                        }
+                        else
+                        {
+                            filtered.push_back(kp);
+                        }
+                    }
+                    keypoints = filtered;
+                }
+            }
+        }
+
         Mat descriptors;
 
         int nkeypoints = 0;

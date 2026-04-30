@@ -19,6 +19,10 @@ public class SystemMono {
         System.loadLibrary("ORBSLAM");
     }
 
+    // 传感器类型常量，与 ORB_SLAM3::System::eSensor 一致
+    public static final int MONOCULAR = 0;
+    public static final int IMU_MONOCULAR = 3;
+
 
     private uCamera muCamera;
     private String mFileVoc;
@@ -32,18 +36,16 @@ public class SystemMono {
      * 初始化的时候很耗时 Handler.post调用
      * 检查资源和测试运行环境
      */
-    public SystemMono(uCamera camera,String fileVoc,String fileCamParam)
+    public SystemMono(uCamera camera, String fileVoc, String fileCamParam, int sensorType)
     {
         muCamera = camera;
-//        mFileVoc = fileVoc;
-//        mFileCamParam = fileCamParam;
 
         // 这里设置 AdaptSLAM 的参数，后续可以改为从 UI 获取
         String runType = "client";
         String serverIp = "192.168.1.161"; // 请改为你的服务器实际IP
         String serverPort = "10001";
 
-        mpnSystem = nCreateSystemMono(fileCamParam, fileVoc, runType, serverIp, serverPort);
+        mpnSystem = nCreateSystemMono(fileCamParam, fileVoc, runType, serverIp, serverPort, sensorType);
 
     }
 
@@ -203,8 +205,7 @@ public class SystemMono {
     /**
      * 相当于 new ORBSLAM::SYSTEM 和 delete ORMSLAM::SYSTEM
      */
-    // 修改 native 方法定义
-    static native long nCreateSystemMono(String fileSetting, String fileOrbVoc, String runType, String serverIp, String serverPort);
+    static native long nCreateSystemMono(String fileSetting, String fileOrbVoc, String runType, String serverIp, String serverPort, int sensorType);
     static native void nDeleteSystemMono(long pSystem);
 
 

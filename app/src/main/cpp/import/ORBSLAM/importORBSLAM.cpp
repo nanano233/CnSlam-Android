@@ -44,7 +44,7 @@ cv::Mat detect_dynamic_mask(const cv::Mat& bgr_img) {
 
     int img_w = bgr_img.cols;
     int img_h = bgr_img.rows;
-    const int target_size = 320;
+    const int target_size = 256;
 
     // ==================== 1. OpenCV 安全预处理 ====================
     float scale = std::min((float)target_size / img_w, (float)target_size / img_h);
@@ -73,11 +73,11 @@ cv::Mat detect_dynamic_mask(const cv::Mat& bgr_img) {
     ex.extract("output", out);
 
     cv::Mat mask(img_h, img_w, CV_8UC1, cv::Scalar(255)); // 默认全白
-    if (out.empty() || out.h != 2100 || out.w != 144) return mask;
+    if (out.empty() || out.h != 1344 || out.w != 144) return mask;
 
     // ==================== 3. 解析与 NMS ====================
     int strides[3] = {8, 16, 32};
-    int grids[3] = {40, 20, 10};
+    int grids[3] = {32, 16, 8};
     int anchor_idx = 0;
 
     std::vector<cv::Rect> boxes;
@@ -95,7 +95,7 @@ cv::Mat detect_dynamic_mask(const cv::Mat& bgr_img) {
                     score = 1.0f / (1.0f + exp(-score));
                 }
 
-                if (score > 0.60f) {
+                if (score > 0.65f) {
                     float dfl[4];
                     for (int k = 0; k < 4; k++) {
                         float sum = 0.f, exp_sum = 0.f;
@@ -152,6 +152,10 @@ cv::Mat detect_dynamic_mask(const cv::Mat& bgr_img) {
         cv::rectangle(mask, boxes[idx], cv::Scalar(0), -1);
     }
 
+    // 轻微膨胀掩码静态区域，缩小动态遮罩，保留行人边缘附近的静态特征
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(7, 7));
+    cv::dilate(mask, mask, kernel);
+
     return mask;
 }
 
@@ -165,7 +169,6 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateVocabulary(
     const char* filename_str;
     filename_str = env->GetStringUTFChars(txt_file, 0);
     if(!filename_str) {
-        env->ReleaseStringUTFChars(txt_file, filename_str);
         __android_log_print(ANDROID_LOG_ERROR, TAG, "Vocabulary Filename Error");
         return 0;
     }
@@ -200,19 +203,18 @@ JNIEXPORT jlong JNICALL
 Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateSystemMono(JNIEnv *env, jclass clazz,
                                                                      jstring file_setting,
                                                                      jstring file_orb_voc,
-                                                                     // 新增 JNI 参数
                                                                      jstring run_type,
                                                                      jstring server_ip,
-                                                                     jstring server_port) {
-    // 强行关闭 OpenCV 的 SIMD/NEON 优化
-    cv::setUseOptimized(false);
+                                                                     jstring server_port,
+                                                                     jint sensor_type) {
+    // 启用 OpenCV 的 SIMD/NEON 优化（提高精度一致性）
+    cv::setUseOptimized(true);
     // TODO: implement nCreateSystemMono()
     __android_log_print(ANDROID_LOG_INFO, TAG, "Starting Good Luck!");
 
     const char* filename_setting_str;
     filename_setting_str = env->GetStringUTFChars(file_setting, 0);
     if(!filename_setting_str) {
-        env->ReleaseStringUTFChars(file_setting, filename_setting_str);
         __android_log_print(ANDROID_LOG_ERROR, TAG, "Setting Filename Error");
         return 0;
     }
@@ -220,7 +222,6 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateSystemMono(JNIEnv *env
     const char* filename_voctxt_str;
     filename_voctxt_str = env->GetStringUTFChars(file_orb_voc, 0);
     if(!filename_voctxt_str) {
-        env->ReleaseStringUTFChars(file_orb_voc, filename_voctxt_str);
         __android_log_print(ANDROID_LOG_ERROR, TAG, "Vocabulary Filename Error");
         return 0;
     }
@@ -228,21 +229,21 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateSystemMono(JNIEnv *env
     __android_log_print(ANDROID_LOG_INFO, TAG, "Camera %s",filename_setting_str);
     __android_log_print(ANDROID_LOG_INFO, TAG, "Voc %s",filename_voctxt_str);
 
-    // 字符串转换代码
+    // 字符串转换代码（防御 NULL）
     const char* run_type_str = env->GetStringUTFChars(run_type, 0);
     const char* server_ip_str = env->GetStringUTFChars(server_ip, 0);
     const char* server_port_str = env->GetStringUTFChars(server_port, 0);
+    std::string runTypeStr = run_type_str ? run_type_str : "";
+    std::string serverIpStr = server_ip_str ? server_ip_str : "";
+    std::string serverPortStr = server_port_str ? server_port_str : "";
 
     ORB_SLAM3::System* system = 0;
     try
     {
-        // 调用修改后的 System 构造函数
-//        system = new ORB_SLAM3::System(filename_voctxt_str, filename_setting_str,
-//                                       ORB_SLAM3::System::MONOCULAR, false, 0, "Android",
-//                                       string(run_type_str), string(server_ip_str), string(server_port_str));
+        ORB_SLAM3::System::eSensor eSensorType = static_cast<ORB_SLAM3::System::eSensor>(sensor_type);
         system = new ORB_SLAM3::System(filename_voctxt_str, filename_setting_str,
-                                       ORB_SLAM3::System::IMU_MONOCULAR, false, 0, "Android",
-                                       string(run_type_str), string(server_ip_str), string(server_port_str));
+                                       eSensorType, false, 0, "Android",
+                                       runTypeStr, serverIpStr, serverPortStr);
     }
     catch(const std::exception& e) {
         // 把 OpenCV 的格式错误打印在 Logcat 里
@@ -262,9 +263,9 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nCreateSystemMono(JNIEnv *env
     __android_log_print(ANDROID_LOG_INFO, TAG, "Start Success! %X",system);
 
     // ReleaseStringUTFChars
-    env->ReleaseStringUTFChars(run_type, run_type_str);
-    env->ReleaseStringUTFChars(server_ip, server_ip_str);
-    env->ReleaseStringUTFChars(server_port, server_port_str);
+    if (run_type_str) env->ReleaseStringUTFChars(run_type, run_type_str);
+    if (server_ip_str) env->ReleaseStringUTFChars(server_ip, server_ip_str);
+    if (server_port_str) env->ReleaseStringUTFChars(server_port, server_port_str);
 
     return (long)system;
 
@@ -277,6 +278,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nShutdown(JNIEnv *env, jclass
     // TODO: implement nShutdown()
 
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
+    if (!system) return 0;
     system->Shutdown();
     return 0;
 }
@@ -287,6 +289,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nDeleteSystemMono(JNIEnv *env
     // TODO: implement nDeleteSystemMono()
 
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
+    if (!system) return;
     delete system;
 }
 
@@ -300,6 +303,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetTrackingState(JNIEn
     // TODO: implement nSystemGetTrackingState()
 
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
+    if (!system) return -1;
     return system->GetTrackingState();
 
 
@@ -311,12 +315,11 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
                                                                        jlong p_system,
                                                                        jobject bitmap,
                                                                        jdouble second) {
-    // 1. 获取 Bitmap
+    // 1. 获取 Bitmap（RGB 图像）
     cv::Mat input = cv::bitmap2Mat(env, bitmap);
 
-    // ==================== 新增：YOLO 动态掩码提取 ====================
+    // 2. 转为 BGR（匹配电脑端 cv::imread 的输出格式）
     cv::Mat bgrImg;
-    // 安卓 Bitmap 默认通常是 RGBA，YOLO 需要 BGR 格式
     if (input.channels() == 4) {
         cv::cvtColor(input, bgrImg, cv::COLOR_RGBA2BGR);
     } else if (input.channels() == 3) {
@@ -325,43 +328,33 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
         bgrImg = input.clone();
     }
 
-    // 调用检测函数生成掩码 (动态区域为0，静态为255)
+    // 3. YOLO 动态掩码提取
     cv::Mat dynamicMask = detect_dynamic_mask(bgrImg);
-    // ==================================================================
-    // ==================== 新增：可视化掩码 ====================
+
+    // 4. 半透明掩码可视化（在 RGB input 上，只影响显示）
     if (!dynamicMask.empty()) {
-        for(int y = 0; y < input.rows; y++) {
-            for(int x = 0; x < input.cols; x++) {
-                // 如果掩码像素为 0 (动态物体)，则在原图上涂成半透明红色
-                if(dynamicMask.at<uchar>(y, x) == 0) {
-                    input.at<cv::Vec4b>(y, x)[0] = 0;   // R
-                    input.at<cv::Vec4b>(y, x)[1] = 0;   // G
-                    input.at<cv::Vec4b>(y, x)[2] = 255; // B (假设 input 是 RGBA 格式)
-                }
-            }
+        cv::Mat maskHighlight;
+        cv::bitwise_not(dynamicMask, maskHighlight);
+        const float alpha = 0.4f;
+        if (input.channels() == 4) {
+            cv::Mat overlay(input.size(), input.type(), cv::Scalar(0, 0, 255, 0));
+            cv::Mat blended;
+            cv::addWeighted(input, 1.0f - alpha, overlay, alpha, 0, blended);
+            blended.copyTo(input, maskHighlight);
+        } else {
+            cv::Mat overlay(input.size(), input.type(), cv::Scalar(0, 0, 255));
+            cv::Mat blended;
+            cv::addWeighted(input, 1.0f - alpha, overlay, alpha, 0, blended);
+            blended.copyTo(input, maskHighlight);
         }
     }
-    // ==========================================================
 
-    // 2. 转灰度图
-    cv::Mat inputGray;
-    if (input.channels() == 4) {
-        cv::cvtColor(input, inputGray, cv::COLOR_RGBA2GRAY);
-    } else if (input.channels() == 3) {
-        cv::cvtColor(input, inputGray, cv::COLOR_RGB2GRAY);
-    } else {
-        inputGray = input.clone();
-    }
-
-    // 3. 内存隔离
-    cv::Mat safeInputGray(inputGray.rows, inputGray.cols, inputGray.type());
-    inputGray.copyTo(safeInputGray);
-
+    // 5. 追踪：传入 BGR 原图 + 动态掩码
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
+    if (!system) return 0;
 
-    // 4. 传入 safeInputGray 和 dynamicMask
     Sophus::SE3f Tcw = system->TrackMonocular(
-            safeInputGray,
+            bgrImg,
             second,
             -1,
             std::vector<ORB_SLAM3::IMU::Point>(),
@@ -369,9 +362,11 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
             dynamicMask
     );
 
-    // 5. 直接在原图绘制特征点
-    std::vector<cv::KeyPoint> rawKeypoints = system->mpTracker->mCurrentFrame.mvKeys;
-    input = frame_draw_fast(&input, rawKeypoints, cv::Scalar(0, 255, 0), 1.0f);
+    // 6. 在显示图像上绘制特征点
+    if (system->mpTracker) {
+        std::vector<cv::KeyPoint> rawKeypoints = system->mpTracker->mCurrentFrame.mvKeys;
+        input = frame_draw_fast(&input, rawKeypoints, cv::Scalar(0, 255, 0), 1.0f);
+    }
     cv::mat2Bitmap(env, bitmap, input);
 
     return 0;
@@ -386,6 +381,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetCurrentMapPoints(JN
 
     // Debug
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
+    if (!system) return nullptr;
     //cv::Mat pose = system->mpTracker->mCurrentFrame.mTcw ;
     // __android_log_print(ANDROID_LOG_INFO, TAG, "Pose %d %d",pose.rows,pose.cols);
 //    if(pose.rows>3&&pose.cols>3)
@@ -436,6 +432,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetCurrentCamPose(JNIE
     // TODO: implement nSystemGetCurrentCamPose()
     // Debug
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
+    if (!system || !system->mpTracker) return nullptr;
     Sophus::SE3f Tcw = system->mpTracker->mCurrentFrame.GetPose();
     cv::Mat pose = ORB_SLAM3::Converter::toCvMat(Tcw.matrix());
 
@@ -479,9 +476,10 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMonoIMU(JNIEnv
                                                                           jobject bitmap,
                                                                           jdouble second,
                                                                           jdoubleArray point_data) {
-    // 1. 获取 Bitmap
+    // 1. 获取 Bitmap（RGB 图像）
     cv::Mat input = cv::bitmap2Mat(env, bitmap);
-    // ==================== 新增：YOLO 动态掩码提取 ====================
+
+    // 2. 转为 BGR（匹配电脑端 cv::imread 的输出格式）
     cv::Mat bgrImg;
     if (input.channels() == 4) {
         cv::cvtColor(input, bgrImg, cv::COLOR_RGBA2BGR);
@@ -490,22 +488,29 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMonoIMU(JNIEnv
     } else {
         bgrImg = input.clone();
     }
+
+    // 3. YOLO 动态掩码提取
     cv::Mat dynamicMask = detect_dynamic_mask(bgrImg);
-    // ==================================================================
 
-    // 2. 灰度转换和内存隔离
-    cv::Mat inputGray;
-    if (input.channels() == 4) {
-        cv::cvtColor(input, inputGray, cv::COLOR_RGBA2GRAY);
-    } else if (input.channels() == 3) {
-        cv::cvtColor(input, inputGray, cv::COLOR_RGB2GRAY);
-    } else {
-        inputGray = input.clone();
+    // 4. 半透明掩码可视化（只影响显示，不影响追踪）
+    if (!dynamicMask.empty()) {
+        cv::Mat maskHighlight;
+        cv::bitwise_not(dynamicMask, maskHighlight);
+        const float alpha = 0.4f;
+        if (input.channels() == 4) {
+            cv::Mat overlay(input.size(), input.type(), cv::Scalar(0, 0, 255, 0));
+            cv::Mat blended;
+            cv::addWeighted(input, 1.0f - alpha, overlay, alpha, 0, blended);
+            blended.copyTo(input, maskHighlight);
+        } else {
+            cv::Mat overlay(input.size(), input.type(), cv::Scalar(0, 0, 255));
+            cv::Mat blended;
+            cv::addWeighted(input, 1.0f - alpha, overlay, alpha, 0, blended);
+            blended.copyTo(input, maskHighlight);
+        }
     }
-    cv::Mat safeInputGray(inputGray.rows, inputGray.cols, inputGray.type());
-    inputGray.copyTo(safeInputGray);
 
-    // 3. 获取 IMU 数据
+    // 5. 获取 IMU 数据
     int IMUDataLen = env->GetArrayLength(point_data);
     jdouble *pIMUData = env->GetDoubleArrayElements(point_data, NULL);
     vector<ORB_SLAM3::IMU::Point> imupoints;
@@ -526,11 +531,12 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMonoIMU(JNIEnv
     env->ReleaseDoubleArrayElements(point_data, pIMUData, JNI_ABORT);
 
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
+    if (!system) return 0;
 
     try {
-        // 4. 传入安全的原分辨率灰度图, 传入 safeInputGray、IMU 数据以及 dynamicMask
+        // 6. 传入 BGR 原图、IMU 数据以及 dynamicMask（让 Tracking 内部做灰度转换）
         Sophus::SE3f Tcw = system->TrackMonocular(
-                safeInputGray,
+                bgrImg,
                 second,
                 -1,
                 imupoints,
@@ -538,7 +544,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMonoIMU(JNIEnv
                 dynamicMask
         );
 
-        // 5.画特征点
+        // 7. 画特征点
         input = frame_draw_fast(&input, system->GetTrackedKeyPointsUn(), cv::Scalar(0,255,0), 1.0f);
     }
     catch(int err) {
@@ -555,6 +561,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nReset(JNIEnv *env, jclass cl
     // TODO: implement nReset()
 
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
+    if (!system) return;
     system->Reset();
 
 }
@@ -566,7 +573,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nInitYOLO(JNIEnv *env, jobjec
     AAssetManager* mgr = AAssetManager_fromJava(env, asset_manager);
 
     yolo_net.opt.use_vulkan_compute = false; // GPU 加速
-    yolo_net.opt.num_threads = 4;
+    yolo_net.opt.num_threads = 2;
 
     // 请确保 assets 目录下有这两个文件
     int ret1 = yolo_net.load_param(mgr, "yolov8n.param");

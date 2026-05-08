@@ -106,7 +106,7 @@ cv::Mat detect_dynamic_mask(const cv::Mat& bgr_img) {
                     score = 1.0f / (1.0f + exp(-score));
                 }
 
-                if (score > 0.65f) {
+                if (score > 0.40f) {
                     float dfl[4];
                     for (int k = 0; k < 4; k++) {
                         float sum = 0.f, exp_sum = 0.f;
@@ -370,6 +370,18 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
     // 3. YOLO 动态掩码提取
     cv::Mat dynamicMask = detect_dynamic_mask(bgrImg);
 
+    // 当掩码面积超过画面40%时，跳过特征过滤（静态背景特征不足）
+    cv::Mat trackingMask = dynamicMask;
+    if (!dynamicMask.empty()) {
+        int totalPixels = dynamicMask.rows * dynamicMask.cols;
+        int staticPixels = cv::countNonZero(dynamicMask);
+        float staticRatio = (float)staticPixels / totalPixels;
+        if (staticRatio < 0.60f) {
+            // 静态区域不足60%（掩码超过40%），跳过特征过滤
+            trackingMask = cv::Mat();
+        }
+    }
+
     // 4. 半透明掩码可视化（在 RGB input 上，只影响显示）
     if (!dynamicMask.empty()) {
         cv::Mat maskHighlight;
@@ -399,7 +411,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
             -1,
             std::vector<ORB_SLAM3::IMU::Point>(),
             "",
-            dynamicMask
+            trackingMask
     );
     auto t3 = std::chrono::steady_clock::now();
 

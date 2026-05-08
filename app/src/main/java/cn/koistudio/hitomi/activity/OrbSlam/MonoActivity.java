@@ -361,7 +361,7 @@ public class MonoActivity extends AppCompatActivity {
             // 如果主要在测试数据集，先强制改为数据集的配置
             boolean isDatasetMode = true;
             if (isDatasetMode) {
-                yamlFileName = "TUM3.yaml"; // 请确保 assets 里有这个文件
+                yamlFileName = "EuRoC.yaml"; // IMU_MONOCULAR 模式
             }
 
             String filenameParam = uAssets.prepareAsset(mContext, yamlFileName);
@@ -618,14 +618,12 @@ public class MonoActivity extends AppCompatActivity {
         new Thread(() -> {
             // 1. 加载数据集路径
             File sdcard = android.os.Environment.getExternalStorageDirectory();
-            File datasetIndexFile = new File(sdcard, "SLAM/rgbd_dataset_freiburg3_walking_halfsphere/rgb.txt");
-            //File datasetIndexFile = new File(sdcard, "SLAM/advio-13/data.csv");
+            File datasetIndexFile = new File(sdcard, "SLAM/dataset/V1_02/mav0/cam0/data.csv");
             loadDataset(datasetIndexFile.getAbsolutePath());
 
-//            // 2. 加载 IMU 数据集
-//            File imuIndexFile = new File(sdcard, "SLAM/dataset/imu0/data.csv");
-//            //File imuIndexFile = new File(sdcard, "SLAM/advio-13/imu-gyro.csv");
-//            loadImuDataset(imuIndexFile.getAbsolutePath());
+            // 2. 加载 IMU 数据集
+            File imuIndexFile = new File(sdcard, "SLAM/dataset/V1_02/mav0/imu0/data.csv");
+            loadImuDataset(imuIndexFile.getAbsolutePath());
 
             if (mDatasetFrames.isEmpty()) {
                 runOnUiThread(() -> Toast.makeText(mContext, "未找到数据集或IMU数据集", Toast.LENGTH_LONG).show());
@@ -675,32 +673,24 @@ public class MonoActivity extends AppCompatActivity {
                         Log.e(TAG, "Decode image failed: " + frame.imagePath);
                         continue;
                     }
-                    // 调用核心算法 (这里使用纯视觉接口)
-                    // 使用数据集的时间戳 frame.timestamp
-                    mSystem.TrackingMono(bitmap, frame.timestamp);
+                    // 打包从上一次到当前图片时间戳之间的所有 IMU 数据
+                    List<double[]> vImuMeas = new java.util.ArrayList<>();
+                    while (currentImuIndex < mDatasetImu.size()) {
+                        ImuData imu = mDatasetImu.get(currentImuIndex);
+                        if (imu.timestamp <= frame.timestamp) {
+                            double[] imuPoint = new double[7];
+                            imuPoint[0] = imu.ax; imuPoint[1] = imu.ay; imuPoint[2] = imu.az;
+                            imuPoint[3] = imu.gx; imuPoint[4] = imu.gy; imuPoint[5] = imu.gz;
+                            imuPoint[6] = imu.timestamp;
+                            vImuMeas.add(imuPoint);
+                            currentImuIndex++;
+                        } else {
+                            break;
+                        }
+                    }
 
-//                    // 打包从上一次到当前图片时间戳之间的所有 IMU 数据
-//                    List<double[]> vImuMeas = new java.util.ArrayList<>();
-//                    while (currentImuIndex < mDatasetImu.size()) {
-//                        ImuData imu = mDatasetImu.get(currentImuIndex);
-//
-//                        // 如果 IMU 的时间戳小于等于当前图片的时间戳，就装进去
-//                        if (imu.timestamp <= frame.timestamp) {
-//                            // SystemMono 期望的数组格式：[ax, ay, az, gx, gy, gz, timestamp]
-//                            double[] imuPoint = new double[7];
-//                            imuPoint[0] = imu.ax; imuPoint[1] = imu.ay; imuPoint[2] = imu.az;
-//                            imuPoint[3] = imu.gx; imuPoint[4] = imu.gy; imuPoint[5] = imu.gz;
-//                            imuPoint[6] = imu.timestamp;
-//                            vImuMeas.add(imuPoint);
-//                            currentImuIndex++;
-//                        } else {
-//                            // IMU 跑到图片前面去了，跳出循环，等待下一张图片
-//                            break;
-//                        }
-//                    }
-//
-//                    // 调用带有 IMU 的接口
-//                    mSystem.TrackingMonoIMU(bitmap, frame.timestamp, vImuMeas);
+                    // 调用带有 IMU 的接口
+                    mSystem.TrackingMonoIMU(bitmap, frame.timestamp, vImuMeas);
 
                     // 4. 更新UI
                     final Bitmap drawBmp = bitmap; // 指向被C++画过特征点的图(如果C++里修改了)或者原图

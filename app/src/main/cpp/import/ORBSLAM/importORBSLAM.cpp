@@ -26,6 +26,7 @@
 #include <opencv2/dnn.hpp>
 
 #include <exception>
+#include <chrono>
 
 static const char* TAG = "ORBSLAM";
 
@@ -39,8 +40,18 @@ struct Object {
 static ncnn::Net yolo_net;
 static bool bYoloInitialized = false;
 
+// YOLO 统计计数器
+static int gYoloTotalFrames = 0;
+static int gYoloDetectFrames = 0;
+static int gYoloTotalPersons = 0;
+static float gYoloTotalConf = 0.0f;
+static double gYoloTotalTimeMs = 0.0;
+
 cv::Mat detect_dynamic_mask(const cv::Mat& bgr_img) {
     if (!bYoloInitialized) return cv::Mat();
+
+    gYoloTotalFrames++;
+    auto t1 = std::chrono::steady_clock::now();
 
     int img_w = bgr_img.cols;
     int img_h = bgr_img.rows;
@@ -152,9 +163,29 @@ cv::Mat detect_dynamic_mask(const cv::Mat& bgr_img) {
         cv::rectangle(mask, boxes[idx], cv::Scalar(0), -1);
     }
 
+    // 更新 YOLO 统计
+    if (!indices.empty()) gYoloDetectFrames++;
+    gYoloTotalPersons += (int)indices.size();
+    for (int idx : indices) gYoloTotalConf += scores[idx];
+
     // 轻微膨胀掩码静态区域，缩小动态遮罩，保留行人边缘附近的静态特征
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(7, 7));
     cv::dilate(mask, mask, kernel);
+
+    // 计时与周期日志
+    auto t2 = std::chrono::steady_clock::now();
+    double ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
+    gYoloTotalTimeMs += ms;
+
+    if (gYoloTotalFrames % 100 == 0) {
+        float avgDetPerFrame = (float)gYoloTotalPersons / gYoloTotalFrames;
+        float avgConf = gYoloTotalPersons > 0 ? gYoloTotalConf / gYoloTotalPersons : 0;
+        float avgTime = (float)(gYoloTotalTimeMs / gYoloTotalFrames);
+        __android_log_print(ANDROID_LOG_INFO, "YOLO_STATS",
+            "Frames=%d DetectFrames=%d TotalPersons=%d AvgDet=%.2f AvgConf=%.3f AvgTime=%.1fms",
+            gYoloTotalFrames, gYoloDetectFrames, gYoloTotalPersons,
+            avgDetPerFrame, avgConf, avgTime);
+    }
 
     return mask;
 }
@@ -309,14 +340,22 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetTrackingState(JNIEn
 
 }
 
+// 模块耗时统计计数器
+static int gPerfFrameCount = 0;
+static double gTotalBmp2MatMs = 0, gTotalMaskVisMs = 0, gTotalTrackMs = 0, gTotalDrawMs = 0;
+static int gTotalKeypoints = 0, gTotalTrackOk = 0;
+
 extern "C"
 JNIEXPORT jlong JNICALL
 Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *env, jclass clazz,
                                                                        jlong p_system,
                                                                        jobject bitmap,
                                                                        jdouble second) {
+    auto t0 = std::chrono::steady_clock::now();
+
     // 1. 获取 Bitmap（RGB 图像）
     cv::Mat input = cv::bitmap2Mat(env, bitmap);
+    auto t1 = std::chrono::steady_clock::now();
 
     // 2. 转为 BGR（匹配电脑端 cv::imread 的输出格式）
     cv::Mat bgrImg;
@@ -348,6 +387,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
             blended.copyTo(input, maskHighlight);
         }
     }
+    auto t2 = std::chrono::steady_clock::now();
 
     // 5. 追踪：传入 BGR 原图 + 动态掩码
     ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
@@ -361,6 +401,7 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
             "",
             dynamicMask
     );
+    auto t3 = std::chrono::steady_clock::now();
 
     // 6. 在显示图像上绘制特征点
     if (system->mpTracker) {
@@ -368,6 +409,34 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
         input = frame_draw_fast(&input, rawKeypoints, cv::Scalar(0, 255, 0), 1.0f);
     }
     cv::mat2Bitmap(env, bitmap, input);
+    auto t4 = std::chrono::steady_clock::now();
+
+    // 累计统计
+    double bmpMatMs = std::chrono::duration<double,std::milli>(t1 - t0).count();
+    double maskVisMs = std::chrono::duration<double,std::milli>(t2 - t1).count();
+    double trackMs = std::chrono::duration<double,std::milli>(t3 - t2).count();
+    double drawMs = std::chrono::duration<double,std::milli>(t4 - t3).count();
+
+    gPerfFrameCount++;
+    gTotalBmp2MatMs += bmpMatMs;
+    gTotalMaskVisMs += maskVisMs;
+    gTotalTrackMs += trackMs;
+    gTotalDrawMs += drawMs;
+
+    if (system->mpTracker) {
+        gTotalKeypoints += (int)system->mpTracker->mCurrentFrame.mvKeys.size();
+        if (system->GetTrackingState() == 2) gTotalTrackOk++;
+    }
+
+    if (gPerfFrameCount % 100 == 0) {
+        __android_log_print(ANDROID_LOG_INFO, "PERF_STATS",
+            "Frames=%d Bmp2Mat=%.1fms MaskVis=%.1fms Track=%.1fms Draw=%.1fms Total=%.1fms AvgKP=%d TrackOK=%d",
+            gPerfFrameCount,
+            gTotalBmp2MatMs/gPerfFrameCount, gTotalMaskVisMs/gPerfFrameCount,
+            gTotalTrackMs/gPerfFrameCount, gTotalDrawMs/gPerfFrameCount,
+            (gTotalBmp2MatMs+gTotalMaskVisMs+gTotalTrackMs+gTotalDrawMs)/gPerfFrameCount,
+            (int)(gTotalKeypoints/gPerfFrameCount), gTotalTrackOk);
+    }
 
     return 0;
 }

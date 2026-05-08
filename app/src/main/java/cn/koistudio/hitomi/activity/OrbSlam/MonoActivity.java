@@ -618,7 +618,7 @@ public class MonoActivity extends AppCompatActivity {
         new Thread(() -> {
             // 1. 加载数据集路径
             File sdcard = android.os.Environment.getExternalStorageDirectory();
-            File datasetIndexFile = new File(sdcard, "SLAM/rgbd_dataset_freiburg3_walking_xyz/rgb.txt");
+            File datasetIndexFile = new File(sdcard, "SLAM/rgbd_dataset_freiburg3_sitting_static/rgb.txt");
             //File datasetIndexFile = new File(sdcard, "SLAM/advio-13/data.csv");
             loadDataset(datasetIndexFile.getAbsolutePath());
 

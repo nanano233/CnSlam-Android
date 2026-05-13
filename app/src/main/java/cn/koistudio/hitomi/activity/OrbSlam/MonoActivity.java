@@ -375,14 +375,14 @@ public class MonoActivity extends AppCompatActivity {
                 }
                 mSystem = new SystemMono(mCamera, filenameVoc, filenameParam, sensorType);
 
-                // ==================== 在此处初始化 YOLO ====================
-                boolean yoloReady = mSystem.nInitYOLO(mContext.getAssets());
-                if (yoloReady) {
-                    Log.i(TAG, "YOLOv8 初始化成功，动态掩码已启用！");
-                } else {
-                    Log.e(TAG, "YOLOv8 初始化失败！");
-                }
-                // ===============================================================
+//                // ==================== 在此处初始化 YOLO ====================
+//                boolean yoloReady = mSystem.nInitYOLO(mContext.getAssets());
+//                if (yoloReady) {
+//                    Log.i(TAG, "YOLOv8 初始化成功，动态掩码已启用！");
+//                } else {
+//                    Log.e(TAG, "YOLOv8 初始化失败！");
+//                }
+//                // ===============================================================
                 mSystemStage = "run";
 
                 // TODO: 通知用户
@@ -481,6 +481,8 @@ public class MonoActivity extends AppCompatActivity {
             mMapRender.switchDist(1);
         if(view.getId()==R.id.SLAM_VIEW_TR)
             mMapRender.switchDist(-1);
+
+        glSurfaceView.requestRender();
     }
 
     // 保存解析后的所有帧
@@ -618,11 +620,11 @@ public class MonoActivity extends AppCompatActivity {
         new Thread(() -> {
             // 1. 加载数据集路径
             File sdcard = android.os.Environment.getExternalStorageDirectory();
-            File datasetIndexFile = new File(sdcard, "SLAM/dataset/V1_02/mav0/cam0/data.csv");
+            File datasetIndexFile = new File(sdcard, "SLAM/dataset/MH01/mav0/cam0/data.csv");
             loadDataset(datasetIndexFile.getAbsolutePath());
 
             // 2. 加载 IMU 数据集
-            File imuIndexFile = new File(sdcard, "SLAM/dataset/V1_02/mav0/imu0/data.csv");
+            File imuIndexFile = new File(sdcard, "SLAM/dataset/MH01/mav0/imu0/data.csv");
             loadImuDataset(imuIndexFile.getAbsolutePath());
 
             if (mDatasetFrames.isEmpty()) {
@@ -673,7 +675,7 @@ public class MonoActivity extends AppCompatActivity {
                         Log.e(TAG, "Decode image failed: " + frame.imagePath);
                         continue;
                     }
-                    // 打包从上一次到当前图片时间戳之间的所有 IMU 数据
+                    // 打包 IMU 数据
                     List<double[]> vImuMeas = new java.util.ArrayList<>();
                     while (currentImuIndex < mDatasetImu.size()) {
                         ImuData imu = mDatasetImu.get(currentImuIndex);
@@ -684,20 +686,22 @@ public class MonoActivity extends AppCompatActivity {
                             imuPoint[6] = imu.timestamp;
                             vImuMeas.add(imuPoint);
                             currentImuIndex++;
-                        } else {
-                            break;
-                        }
+                        } else { break; }
                     }
-
-                    // 调用带有 IMU 的接口
                     mSystem.TrackingMonoIMU(bitmap, frame.timestamp, vImuMeas);
 
                     // 4. 更新UI
                     final Bitmap drawBmp = bitmap; // 指向被C++画过特征点的图(如果C++里修改了)或者原图
+                    final int frameIdx = i;
                     runOnUiThread(() -> {
                         // 更新 GLSurfaceView (地图)
-                        mMapRender.setCameraMatrix(mSystem.mPose);
-                        mMapRender.setCoords(mSystem.mMapPoints);
+                        if (mSystem != null && mSystem.mPose != null && mSystem.mPose.length >= 16) {
+                            mMapRender.setCameraMatrix(mSystem.mPose);
+                            // 位姿矩阵为行主序，平移分量在索引3,7,11
+                            mMapRender.addTrajectoryPoint(
+                                mSystem.mPose[3], mSystem.mPose[7], mSystem.mPose[11]);
+                        }
+                        if (mSystem != null) mMapRender.setCoords(mSystem.mMapPoints);
                         glSurfaceView.requestRender();
 
                         // 更新左下角相机预览

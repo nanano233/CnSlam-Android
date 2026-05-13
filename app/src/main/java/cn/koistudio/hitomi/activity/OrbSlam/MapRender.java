@@ -40,6 +40,7 @@ public class MapRender implements GLSurfaceView.Renderer{
     private float[] mMatrix_Vertex     = new float[16];
     private double  mRy = 0 ;
     private double  mMx = 0 ;
+    private double  mMy = 0 ;
     private double  mMz = 0 ;
 
     public int sightDist = 1 ;
@@ -97,8 +98,9 @@ public class MapRender implements GLSurfaceView.Renderer{
 
 
 
-        mMx = matrix[12];
-        mMz = matrix[14];
+        mMx = matrix[3];
+        mMz = matrix[11];
+        mMy = matrix[7];
 
         // TODO: 从矩阵粗略计算朝向
         double _asin = asin(matrix[2]);
@@ -114,11 +116,16 @@ public class MapRender implements GLSurfaceView.Renderer{
         // TODO: 从矩阵粗略计算朝向
         // mRy = atan2(-matrix[8],sqrt(matrix[8]*matrix[8]+matrix[10]*matrix[10]));
 
+        float zoom = 1.0f / sightDist;
+
         if(sightTop)
         {
 
-            // TODO: 头顶视角
-            Matrix.frustumM(mMatrix_Projection,0,-scaleRate *0.5f,scaleRate * 0.5f,scaleRate * -0.5f,scaleRate * 0.5f,(float) 0.4,6);
+            // TODO: 头顶视角（sightDist缩放视锥体，不移动相机）
+            Matrix.frustumM(mMatrix_Projection,0,
+                -scaleRate * 0.5f * zoom, scaleRate * 0.5f * zoom,
+                -scaleRate * 0.5f * zoom, scaleRate * 0.5f * zoom,
+                (float) 0.1, 500);
 
 
             // TODO: 设置观察原点
@@ -127,33 +134,36 @@ public class MapRender implements GLSurfaceView.Renderer{
                 // TODO: 跟随视角
                 Matrix.setLookAtM(
                         mMatrix_Camera, 0,
-                        matrix[12] / sightDist, -3f, matrix[14] / sightDist,
-                        matrix[12] / sightDist, 0.0001f, matrix[14] / sightDist,
+                        matrix[3], -3f, matrix[11],
+                        matrix[3], 0.0001f, matrix[11],
                         0.001f * (float) -sin(mRy), 2.0f, 0.001f * (float) cos(mRy));
             } else {
                 Matrix.setLookAtM(
                         mMatrix_Camera, 0,
-                        matrix[12] / sightDist, -3f, matrix[14] / sightDist,
-                        matrix[12] / sightDist, 0.0001f, matrix[14]/ sightDist,
+                        matrix[3], -3f, matrix[11],
+                        matrix[3], 0.0001f, matrix[11],
                         0.0000f, 2.0f, 0.0001f);
             }
         }
         else
         {
             // TODO: 尾行视角
-            Matrix.frustumM(mMatrix_Projection,0,-scaleRate *0.5f,scaleRate * 0.5f,scaleRate * -0.5f,scaleRate * 0.5f,(float) 0.2f,0.8f);
+            Matrix.frustumM(mMatrix_Projection,0,
+                -scaleRate * 0.5f * zoom, scaleRate * 0.5f * zoom,
+                -scaleRate * 0.5f * zoom, scaleRate * 0.5f * zoom,
+                (float) 0.1f, 500f);
 
 //            Matrix.setLookAtM(
 ////                    mMatrix_Camera, 0,
-////                    matrix[12] - (float)(0.01f * sin(mRy)) , matrix[13] , matrix[14] - (float)(0.01f * cos(mRy)) ,
-////                    matrix[12]  , matrix[13] , matrix[14]  ,
+////                    matrix[3] - (float)(0.01f * sin(mRy)) , matrix[7] , matrix[11] - (float)(0.01f * cos(mRy)) ,
+////                    matrix[3]  , matrix[7] , matrix[11]  ,
 ////                    0, 2.0f, 0.0001f);
 
             Matrix.setLookAtM(
                 mMatrix_Camera, 0,
-                matrix[12] - (float)(0.1f * sin(mRy)) , matrix[13] , matrix[14] - (float)(0.1f * cos(mRy)) ,
-                matrix[12] + (float)(0.1f * sin(mRy)) , matrix[13] , matrix[14] + (float)(0.1f * sin(mRy)) ,
-                0, 2.0f, 0.0001f);
+                matrix[3] - 0.1f * (float)sin(mRy), matrix[7] + 0.5f, matrix[11] - 0.1f * (float)cos(mRy),
+                matrix[3], matrix[7], matrix[11],
+                0f, 1.0f, 0f);
 
 
         }
@@ -195,7 +205,7 @@ public class MapRender implements GLSurfaceView.Renderer{
 
         //Matrix.orthoM(mMatrix_Projection,0,-rate * 1.0f,rate * 1.0f,rate * -1.0f,rate * 1.0f,(float) 0.5f,10);
         //Matrix.orthoM(mMatrix_Projection,0,-rate *0.5f,rate * 0.5f,rate * -0.5f,rate * 0.5f,(float) 0.4,10);
-        Matrix.frustumM(mMatrix_Projection,0,-rate *0.5f,rate * 0.5f,rate * -0.5f,rate * 0.5f,(float) 0.4,6);
+        Matrix.frustumM(mMatrix_Projection,0,-rate *0.5f,rate * 0.5f,rate * -0.5f,rate * 0.5f,(float) 0.1,500);
         Matrix.setLookAtM(mMatrix_Camera,0,0.0001f,-3f,0.0001f,0.0001f,0.0001f,0.0001f,0f,2.0f,0.0001f);
         // Matrix.setLookAtM(mMatrix_Camera,0,0.0001f,0.001f,0,0.001f,0.001f,1f,0.1f,0.001f,1);
         printfMatrix44(mMatrix_Camera);
@@ -219,6 +229,20 @@ public class MapRender implements GLSurfaceView.Renderer{
     public void setCoords(float[] coords)
     {
         this.mCoords = coords;
+    }
+
+    // 轨迹数据（volatile确保跨线程可见）
+    private float[] mTrajectory = new float[15000]; // 预分配5000个点
+    private volatile int mTrajCount = 0;
+    public void addTrajectoryPoint(float x, float y, float z) {
+        int i = mTrajCount;
+        int idx = i * 3;
+        if (idx + 2 < mTrajectory.length) {
+            mTrajectory[idx] = x;
+            mTrajectory[idx + 1] = y;
+            mTrajectory[idx + 2] = z;
+            mTrajCount = i + 1;
+        }
     }
 
 
@@ -306,20 +330,21 @@ public class MapRender implements GLSurfaceView.Renderer{
                 _cos = (float) cos(-mRy);
 
                 // TODO: 指示方向的三角形
-                float _h1 = 0.2f;
-                float _h2 = 0.1f;
+                float ts = 0.3f / sightDist;
+                float _h1 = ts;
+                float _h2 = ts * 0.5f;
 
-                mCoords[0] = (_h1 * _sin + (float) mMx / sightDist);
+                mCoords[0] = (_h1 * _sin + (float) mMx);
                 mCoords[1] = (0.05f);
-                mCoords[2] = (_h1 * _cos + (float) mMz / sightDist);
+                mCoords[2] = (_h1 * _cos + (float) mMz);
 
-                mCoords[3] = (_h2 * _cos + (float) mMx / sightDist);
+                mCoords[3] = (_h2 * _cos + (float) mMx);
                 mCoords[4] = (0.05f);
-                mCoords[5] = (_h2 * (-_sin) + (float) mMz / sightDist);
+                mCoords[5] = (_h2 * (-_sin) + (float) mMz);
 
-                mCoords[6] = (_h2 * (-_cos) + (float) mMx / sightDist);
+                mCoords[6] = (_h2 * (-_cos) + (float) mMx);
                 mCoords[7] = (0.05f);
-                mCoords[8] = (_h2 * _sin + (float) mMz / sightDist);
+                mCoords[8] = (_h2 * _sin + (float) mMz);
             }
         }
 
@@ -335,12 +360,30 @@ public class MapRender implements GLSurfaceView.Renderer{
 
         GLES20.glVertexAttribPointer(hPosition, 3, GLES20.GL_FLOAT, false, 12, vertexBuffer);
 
-        // GLES20.glDrawArrays(GLES20.GL_POINTS, 0, mCoords.length/3);
+        // 绘制方向三角形 + 地图点云
         if(sightTop)
             GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, (3));
         GLES20.glDrawArrays(GLES20.GL_POINTS, 3, (mCoords.length/3-3));
 
+        // 绘制轨迹（绿色）
+        if (mTrajCount >= 2) {
+            int count = mTrajCount * 3;
+            float[] copy = new float[count];
+            System.arraycopy(mTrajectory, 0, copy, 0, count);
 
+            ByteBuffer bb = ByteBuffer.allocateDirect(count * 4);
+            bb.order(ByteOrder.nativeOrder());
+            FloatBuffer fb = bb.asFloatBuffer();
+            fb.put(copy);
+            fb.position(0);
+
+            float green[] = {0.0f, 1.0f, 0.0f, 1.0f};
+            GLES20.glUniform4fv(hColor, 1, green, 0);
+            GLES20.glUniformMatrix4fv(hMatrix, 1, false, mMatrix_Vertex, 0);
+            GLES20.glVertexAttribPointer(hPosition, 3, GLES20.GL_FLOAT, false, 12, fb);
+            GLES20.glLineWidth(1.0f);
+            GLES20.glDrawArrays(GLES20.GL_LINE_STRIP, 0, mTrajCount);
+        }
 
         GLES20.glDisableVertexAttribArray(hPosition);
 

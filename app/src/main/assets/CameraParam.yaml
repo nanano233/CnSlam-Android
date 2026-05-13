@@ -11,25 +11,26 @@ Camera.type: "PinHole"
 #Camera.cx: 640.0
 #Camera.cy: 360.0
 
-Camera.fx: 640.0
-Camera.fy: 360.0
-Camera.cx: 320.0
-Camera.cy: 180.0
+Camera.fx: 598.249
+Camera.fy: 598.839
+Camera.cx: 318.012
+Camera.cy: 230.789
 
-Camera.k1: 0.0
-Camera.k2: 0.0
-Camera.p1: 0.0
-Camera.p2: 0.0
+Camera.k1: 0.16091
+Camera.k2: -0.477404
+Camera.p1: -0.00181288
+Camera.p2: -5.21584e-05
+Camera.k3: 0.430275
 
 # Camera frames per second
-Camera.fps: 10.0
+Camera.fps: 30.0
 
 # Color order of the images (0: BGR, 1: RGB. It is ignored if images are grayscale)
 Camera.RGB: 1
 
-# Camera resolution
+# Camera resolution·
 Camera.width: 640
-Camera.height: 360
+Camera.height: 480
 
 # IMU
 

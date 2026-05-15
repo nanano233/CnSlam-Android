@@ -85,6 +85,11 @@ public class SystemMono {
 
 
 
+    public float[] getTrajectory()
+    {
+        return nSystemGetCurrentTrajectory(mpnSystem);
+    }
+
     public float[] mPose = {
             1.0f,0.0f,0.0f,0.0f,
             0.0f,1.0f,0.0f,0.0f,
@@ -219,6 +224,7 @@ public class SystemMono {
 
     static native float[] nSystemGetCurrentMapPoints(long pSystem);
     static native float[] nSystemGetCurrentCamPose(long pSystem);
+    static native float[] nSystemGetCurrentTrajectory(long pSystem);
 
     // ==================== 新增：YOLO 初始化接口 ====================
     public native boolean nInitYOLO(android.content.res.AssetManager mgr);

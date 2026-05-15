@@ -39,6 +39,7 @@ struct Object {
 // 定义 YOLO 网络
 static ncnn::Net yolo_net;
 static bool bYoloInitialized = false;
+static bool gAdaptiveMask = false; // 自适应掩码开关：true=掩码覆盖超40%时跳过过滤
 
 // YOLO 统计计数器
 static int gYoloTotalFrames = 0;
@@ -370,14 +371,13 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemTrackingMono(JNIEnv *e
     // 3. YOLO 动态掩码提取
     cv::Mat dynamicMask = detect_dynamic_mask(bgrImg);
 
-    // 当掩码面积超过画面40%时，跳过特征过滤（静态背景特征不足）
+    // 自适应掩码策略：当掩码覆盖面积过大时跳过过滤
     cv::Mat trackingMask = dynamicMask;
-    if (!dynamicMask.empty()) {
+    if (gAdaptiveMask && !dynamicMask.empty()) {
         int totalPixels = dynamicMask.rows * dynamicMask.cols;
         int staticPixels = cv::countNonZero(dynamicMask);
         float staticRatio = (float)staticPixels / totalPixels;
         if (staticRatio < 0.60f) {
-            // 静态区域不足60%（掩码超过40%），跳过特征过滤
             trackingMask = cv::Mat();
         }
     }
@@ -549,6 +549,44 @@ Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetCurrentCamPose(JNIE
 
     return nullptr;
 
+}
+extern "C"
+JNIEXPORT jfloatArray JNICALL
+Java_cn_koistudio_hitomi_module_OrbSlam_SystemMono_nSystemGetCurrentTrajectory(JNIEnv *env,
+                                                                               jclass clazz,
+                                                                               jlong p_system) {
+    ORB_SLAM3::System* system = (ORB_SLAM3::System*) p_system;
+    if (!system || !system->mpAtlas) return nullptr;
+
+    ORB_SLAM3::Map* pMap = system->mpAtlas->GetCurrentMap();
+    if (!pMap) return nullptr;
+
+    vector<ORB_SLAM3::KeyFrame*> vpKFs = pMap->GetAllKeyFrames();
+    if (vpKFs.empty()) return nullptr;
+
+    sort(vpKFs.begin(), vpKFs.end(), ORB_SLAM3::KeyFrame::lId);
+
+    int validCount = 0;
+    for (auto pKF : vpKFs) {
+        if (pKF && !pKF->isBad()) validCount++;
+    }
+    if (validCount == 0) return nullptr;
+
+    jfloatArray resArr = env->NewFloatArray(validCount * 3);
+    vector<float> traj;
+    traj.reserve(validCount * 3);
+
+    for (auto pKF : vpKFs) {
+        if (!pKF || pKF->isBad()) continue;
+        Sophus::SE3f Twc = pKF->GetPoseInverse();
+        Eigen::Vector3f t = Twc.translation();
+        traj.push_back(t(0));
+        traj.push_back(t(1));
+        traj.push_back(t(2));
+    }
+
+    env->SetFloatArrayRegion(resArr, 0, validCount * 3, traj.data());
+    return resArr;
 }
 extern "C"
 JNIEXPORT jlong JNICALL

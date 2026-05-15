@@ -1,6 +1,6 @@
 package cn.koistudio.hitomi.activity.OrbSlam;
 
-import static java.lang.Math.asin;
+import static java.lang.Math.atan2;
 import static java.lang.Math.cos;
 import static java.lang.Math.sin;
 
@@ -43,13 +43,13 @@ public class MapRender implements GLSurfaceView.Renderer{
     private double  mMy = 0 ;
     private double  mMz = 0 ;
 
-    public int sightDist = 1 ;
+    public int sightDist = 4 ;
     public void switchDist(int param)
     {
         if(param>0) {
             sightDist = sightDist * 2;
-            if(sightDist>8)
-                sightDist = 8;
+            if(sightDist>64)
+                sightDist = 64;
         }
         else if(param<0) {
             sightDist = sightDist / 2;
@@ -57,7 +57,7 @@ public class MapRender implements GLSurfaceView.Renderer{
                 sightDist = 1;
         }
         else
-            sightDist = 1;
+            sightDist = 4;
 
     }
 
@@ -102,19 +102,8 @@ public class MapRender implements GLSurfaceView.Renderer{
         mMz = matrix[11];
         mMy = matrix[7];
 
-        // TODO: 从矩阵粗略计算朝向
-        double _asin = asin(matrix[2]);
-        if(matrix[0]<0)
-        {
-            if(_asin>0)
-                _asin = Math.PI - _asin;
-            else
-                _asin = - Math.PI - _asin ;
-        }
-        mRy = _asin;
-
-        // TODO: 从矩阵粗略计算朝向
-        // mRy = atan2(-matrix[8],sqrt(matrix[8]*matrix[8]+matrix[10]*matrix[10]));
+        // 相机前向在 XZ 平面的 yaw 角：atan2(forward_x, forward_z)
+        mRy = atan2(matrix[2], matrix[10]);
 
         float zoom = 1.0f / sightDist;
 
@@ -131,12 +120,12 @@ public class MapRender implements GLSurfaceView.Renderer{
             // TODO: 设置观察原点
             if (sightFollow) {
 
-                // TODO: 跟随视角
+                // TODO: up 向量 XZ 分量 = 相机前向，屏幕 +Y 跟随相机朝向
                 Matrix.setLookAtM(
                         mMatrix_Camera, 0,
                         matrix[3], -3f, matrix[11],
                         matrix[3], 0.0001f, matrix[11],
-                        0.001f * (float) -sin(mRy), 2.0f, 0.001f * (float) cos(mRy));
+                        0.001f * (float) sin(mRy), 2.0f, 0.001f * (float) cos(mRy));
             } else {
                 Matrix.setLookAtM(
                         mMatrix_Camera, 0,
@@ -152,12 +141,6 @@ public class MapRender implements GLSurfaceView.Renderer{
                 -scaleRate * 0.5f * zoom, scaleRate * 0.5f * zoom,
                 -scaleRate * 0.5f * zoom, scaleRate * 0.5f * zoom,
                 (float) 0.1f, 500f);
-
-//            Matrix.setLookAtM(
-////                    mMatrix_Camera, 0,
-////                    matrix[3] - (float)(0.01f * sin(mRy)) , matrix[7] , matrix[11] - (float)(0.01f * cos(mRy)) ,
-////                    matrix[3]  , matrix[7] , matrix[11]  ,
-////                    0, 2.0f, 0.0001f);
 
             Matrix.setLookAtM(
                 mMatrix_Camera, 0,
@@ -231,18 +214,20 @@ public class MapRender implements GLSurfaceView.Renderer{
         this.mCoords = coords;
     }
 
-    // 轨迹数据（volatile确保跨线程可见）
-    private float[] mTrajectory = new float[15000]; // 预分配5000个点
+    // 轨迹数据 — 来自当前激活地图的全部关键帧位姿
+    private volatile float[] mTrajectory = null;
     private volatile int mTrajCount = 0;
-    public void addTrajectoryPoint(float x, float y, float z) {
-        int i = mTrajCount;
-        int idx = i * 3;
-        if (idx + 2 < mTrajectory.length) {
-            mTrajectory[idx] = x;
-            mTrajectory[idx + 1] = y;
-            mTrajectory[idx + 2] = z;
-            mTrajCount = i + 1;
+
+    public void setTrajectory(float[] traj) {
+        // 只有新轨迹包含至少2个关键帧时才更新，防止重初始化后轨迹消失
+        if (traj != null && traj.length >= 6) {
+            mTrajectory = traj;
+            mTrajCount = traj.length / 3;
         }
+    }
+
+    public void addTrajectoryPoint(float x, float y, float z) {
+        // 保留兼容，不再使用
     }
 
 
@@ -326,8 +311,10 @@ public class MapRender implements GLSurfaceView.Renderer{
                 //                _cos = (float) cos(-mRy);
                 //            }
 
-                _sin = (float) sin(-mRy);
-                _cos = (float) cos(-mRy);
+                // 三角形在屏幕以上 1:1 速率跟随场景旋转（与相机前向反向）
+                // 推导：三角形世界方向 = (cos(2*mRy), -sin(2*mRy)) → 屏幕角度 = -mRy
+                _sin = (float) cos(2 * mRy);
+                _cos = (float) -sin(2 * mRy);
 
                 // TODO: 指示方向的三角形
                 float ts = 0.3f / sightDist;
@@ -365,16 +352,14 @@ public class MapRender implements GLSurfaceView.Renderer{
             GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, (3));
         GLES20.glDrawArrays(GLES20.GL_POINTS, 3, (mCoords.length/3-3));
 
-        // 绘制轨迹（绿色）
-        if (mTrajCount >= 2) {
-            int count = mTrajCount * 3;
-            float[] copy = new float[count];
-            System.arraycopy(mTrajectory, 0, copy, 0, count);
-
-            ByteBuffer bb = ByteBuffer.allocateDirect(count * 4);
+        // 绘制轨迹（绿色）— 来自当前激活地图的关键帧位姿
+        float[] trajSnap = mTrajectory; // 捕获 volatile 引用
+        int trajCount = mTrajCount;
+        if (trajSnap != null && trajCount >= 2) {
+            ByteBuffer bb = ByteBuffer.allocateDirect(trajCount * 3 * 4);
             bb.order(ByteOrder.nativeOrder());
             FloatBuffer fb = bb.asFloatBuffer();
-            fb.put(copy);
+            fb.put(trajSnap, 0, trajCount * 3);
             fb.position(0);
 
             float green[] = {0.0f, 1.0f, 0.0f, 1.0f};
@@ -382,7 +367,7 @@ public class MapRender implements GLSurfaceView.Renderer{
             GLES20.glUniformMatrix4fv(hMatrix, 1, false, mMatrix_Vertex, 0);
             GLES20.glVertexAttribPointer(hPosition, 3, GLES20.GL_FLOAT, false, 12, fb);
             GLES20.glLineWidth(1.0f);
-            GLES20.glDrawArrays(GLES20.GL_LINE_STRIP, 0, mTrajCount);
+            GLES20.glDrawArrays(GLES20.GL_LINE_STRIP, 0, trajCount);
         }
 
         GLES20.glDisableVertexAttribArray(hPosition);
